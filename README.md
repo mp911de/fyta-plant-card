@@ -55,12 +55,12 @@ For manual YAML configuration, use these options:
 | display_mode         | string  | `full` or `compact`                                 | `full`       |
 | battery_threshold    | number  | Battery level (%) at which icon appears (0-100)     | `30`         |
 | preferred_image      | string  | `user` or `default`                                 | `user`       |
-| show_scientific_name | boolean | Show light sensor                                   | `true`       |
+| show_scientific_name | boolean | Show scientific name                                | `true`       |
 | state_color_battery  | boolean | Expose battery state in color of battery icon       | `true`       |
 | state_color_icon     | boolean | Expose sensor state in color of sensor icons        | `true`       |
-| state_color_plant    | string  | `image`, `name`, or `disabled`                      | `image`      |
+| state_color_plant    | string  | `image`, `name`, or `disabled`                      | `name`       |
 | state_color_sensor   | boolean | Expose sensor state in color of sensor bars         | `true`       |
-| sensor               | boolean | Array of sensor information                         | See sensors  |
+| sensors              | array   | Array of sensor information                         | See sensors  |
 
 ### Sensors
 Sensors is a YAML array that set the order of sensors and whether they are enabled. Each entry consists of a type (`light`, `moisture`, `temperature`, `salinity`, or `nutrients`) and its state `isEnabled`.
@@ -85,9 +85,9 @@ preferred_image: user
 show_scientific_name: true
 state_color_battery: true
 state_color_icon: true
-state_color_plant: image
+state_color_plant: name
 state_color_sensor: true
-sensor:
+sensors:
   - type: light
     isEnabled: true
   - type: moisture

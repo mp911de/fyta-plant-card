@@ -70,6 +70,7 @@
     },
     "tooltip": {
       "battery_level": "Batterie: {level}%",
+      "battery_unknown": "Batterie: Unbekannt",
       "status": "Status: {status}",
       "sensor_value": "{name}: {value} {unit}",
       "nutrition_status": "Nährstoffstatus: {status}",
@@ -79,6 +80,10 @@
       "fertilize_overdue_many": "Düngung überfällig seit {days} Tagen",
       "last_fertilization": "Letzte Düngung: {date}",
       "next_fertilization": "Nächste Düngung: {date}"
+    },
+    "aria": {
+      "plant_details": "Pflanzendetails für {name} öffnen",
+      "sensor_details": "Details für {name} öffnen"
     },
     "unit": {
       "day_one": "Tag",
