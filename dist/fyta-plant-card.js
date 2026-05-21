@@ -376,6 +376,11 @@ const parseConfig = (config) => {
 };
 
 class FytaPlantCard extends LitElement {
+  static properties = {
+    hass: { attribute: false },
+    config: { state: true },
+  };
+
   static getConfigElement() {
     return document.createElement(`${CUSTOM_CARD_NAME}-editor`);
   }
@@ -389,6 +394,10 @@ class FytaPlantCard extends LitElement {
 
     this.attachShadow({ mode: 'open' });
 
+    this._resetEntityIds();
+  }
+
+  _resetEntityIds() {
     this._measurementEntityIds = {
       [SensorTypes.BATTERY]: '',
       [SensorTypes.LIGHT]: '',
@@ -412,6 +421,33 @@ class FytaPlantCard extends LitElement {
       [SensorTypes.PLANT_IMAGE_DEFAULT]: '',
       [SensorTypes.PLANT_IMAGE_USER]: '',
       [SensorTypes.SCIENTIFIC_NAME]: '',
+    };
+  }
+
+  _createEntityIdMaps() {
+    return {
+      measurementEntityIds: {
+        [SensorTypes.BATTERY]: '',
+        [SensorTypes.LIGHT]: '',
+        [SensorTypes.MOISTURE]: '',
+        [SensorTypes.TEMPERATURE]: '',
+        [SensorTypes.SALINITY]: '',
+      },
+      stateEntityIds: {
+        [SensorTypes.LIGHT_STATE]: '',
+        [SensorTypes.MOISTURE_STATE]: '',
+        [SensorTypes.NUTRIENTS_STATE]: '',
+        [SensorTypes.PLANT_STATE]: '',
+        [SensorTypes.SALINITY_STATE]: '',
+        [SensorTypes.TEMPERATURE_STATE]: '',
+      },
+      otherEntityIds: {
+        [SensorTypes.FERTILIZATION_LAST]: '',
+        [SensorTypes.FERTILIZATION_NEXT]: '',
+        [SensorTypes.PLANT_IMAGE_DEFAULT]: '',
+        [SensorTypes.PLANT_IMAGE_USER]: '',
+        [SensorTypes.SCIENTIFIC_NAME]: '',
+      },
     };
   }
 
@@ -554,7 +590,11 @@ class FytaPlantCard extends LitElement {
     return '';
   };
 
-  _handleEntity(id, hass) {
+  _handleEntity(id, hass, entityIdMaps = {
+    measurementEntityIds: this._measurementEntityIds,
+    stateEntityIds: this._stateEntityIds,
+    otherEntityIds: this._otherEntityIds,
+  }) {
     const hassState = hass.states[id];
     if (!hassState) return;
 
@@ -563,10 +603,10 @@ class FytaPlantCard extends LitElement {
 
     if (id.startsWith('image.')) {
       if (hassEntity.translation_key === TranslationKeys.PLANT_IMAGE_USER) {
-        this._otherEntityIds[SensorTypes.PLANT_IMAGE_USER] = hassState.entity_id;
+        entityIdMaps.otherEntityIds[SensorTypes.PLANT_IMAGE_USER] = hassState.entity_id;
         return;
       }
-      this._otherEntityIds[SensorTypes.PLANT_IMAGE_DEFAULT] = hassState.entity_id;
+      entityIdMaps.otherEntityIds[SensorTypes.PLANT_IMAGE_DEFAULT] = hassState.entity_id;
       return;
     }
 
@@ -583,28 +623,28 @@ class FytaPlantCard extends LitElement {
         case TranslationKeys.PLANT_STATUS:
         case TranslationKeys.SALINITY_STATUS:
         case TranslationKeys.TEMPERATURE_STATUS: {
-          this._stateEntityIds[hassEntity.translation_key.replace('_status', '')] = hassState.entity_id;
+          entityIdMaps.stateEntityIds[hassEntity.translation_key.replace('_status', '')] = hassState.entity_id;
           return;
         }
 
         case TranslationKeys.FERTILIZATION_LAST: {
-          this._otherEntityIds[SensorTypes.FERTILIZATION_LAST] = hassState.entity_id;
+          entityIdMaps.otherEntityIds[SensorTypes.FERTILIZATION_LAST] = hassState.entity_id;
           return;
         }
         case TranslationKeys.FERTILIZATION_NEXT: {
-          this._otherEntityIds[SensorTypes.FERTILIZATION_NEXT] = hassState.entity_id;
+          entityIdMaps.otherEntityIds[SensorTypes.FERTILIZATION_NEXT] = hassState.entity_id;
           return;
         }
         case TranslationKeys.LIGHT: {
-          this._measurementEntityIds[SensorTypes.LIGHT] = hassState.entity_id;
+          entityIdMaps.measurementEntityIds[SensorTypes.LIGHT] = hassState.entity_id;
           return;
         }
         case TranslationKeys.SALINITY: {
-          this._measurementEntityIds[SensorTypes.SALINITY] = hassState.entity_id;
+          entityIdMaps.measurementEntityIds[SensorTypes.SALINITY] = hassState.entity_id;
           return;
         }
         case TranslationKeys.SCIENTIFIC_NAME: {
-          this._otherEntityIds[SensorTypes.SCIENTIFIC_NAME] = hassState.entity_id;
+          entityIdMaps.otherEntityIds[SensorTypes.SCIENTIFIC_NAME] = hassState.entity_id;
           return;
         }
 
@@ -613,7 +653,7 @@ class FytaPlantCard extends LitElement {
             case DeviceClass.BATTERY:
             case DeviceClass.MOISTURE:
             case DeviceClass.TEMPERATURE: {
-              this._measurementEntityIds[hassState.attributes.device_class] = hassState.entity_id;
+              entityIdMaps.measurementEntityIds[hassState.attributes.device_class] = hassState.entity_id;
               return;
             }
           }
@@ -622,10 +662,80 @@ class FytaPlantCard extends LitElement {
     }
   }
 
-  _handleEntities(hass, deviceId) {
-    Object.keys(hass.entities)
+  _resolveEntityIds(hass, deviceId) {
+    const entityIdMaps = this._createEntityIdMaps();
+
+    Object.keys(hass.entities || {})
       .filter((id) => hass.entities[id].device_id === deviceId)
-      .forEach((id) => this._handleEntity(id, hass), this);
+      .forEach((id) => this._handleEntity(id, hass, entityIdMaps), this);
+
+    return entityIdMaps;
+  }
+
+  _handleEntities(hass, deviceId) {
+    const entityIdMaps = this._resolveEntityIds(hass, deviceId);
+    this._measurementEntityIds = entityIdMaps.measurementEntityIds;
+    this._stateEntityIds = entityIdMaps.stateEntityIds;
+    this._otherEntityIds = entityIdMaps.otherEntityIds;
+  }
+
+  _getTrackedEntityIds(entityIdMaps) {
+    return [
+      ...Object.values(entityIdMaps.measurementEntityIds),
+      ...Object.values(entityIdMaps.stateEntityIds),
+      ...Object.values(entityIdMaps.otherEntityIds),
+    ].filter(Boolean).sort();
+  }
+
+  _getEntityStateSignature(hass, entityId) {
+    const state = hass.states[entityId];
+    if (!state) {
+      return 'missing';
+    }
+
+    if (entityId.startsWith('image.')) {
+      return JSON.stringify([
+        state.attributes?.entity_picture || '',
+      ]);
+    }
+
+    return JSON.stringify([
+      state.state,
+      state.attributes?.entity_picture || '',
+      state.attributes?.unit_of_measurement || '',
+      state.display_precision ?? '',
+    ]);
+  }
+
+  _getHassSignature(hass) {
+    if (!hass || !this.config?.device_id) {
+      return '';
+    }
+
+    const deviceId = this.config.device_id;
+    const entityIdMaps = this._resolveEntityIds(hass, deviceId);
+    const trackedEntityIds = this._getTrackedEntityIds(entityIdMaps);
+    const deviceName = hass.devices?.[deviceId]?.name || '';
+
+    return JSON.stringify({
+      deviceName,
+      entityIdMaps,
+      trackedEntityIds,
+      states: trackedEntityIds.map((entityId) => this._getEntityStateSignature(hass, entityId)),
+    });
+  }
+
+  shouldUpdate(changedProps) {
+    if (changedProps.has('config') || !changedProps.has('hass')) {
+      return true;
+    }
+
+    const oldHass = changedProps.get('hass');
+    if (!oldHass || !this.hass || !this.config?.device_id) {
+      return true;
+    }
+
+    return this._getHassSignature(oldHass) !== this._getHassSignature(this.hass);
   }
 
   static get styles() {
@@ -909,18 +1019,7 @@ class FytaPlantCard extends LitElement {
     }
 
     const device = this.hass.devices[deviceId];
-
-    // Create a new config object with all defaults
-    if (!this.config?.title || this.config.title === '') {
-      const newConfig = {
-        ...DEFAULT_CONFIG,
-        ...this.config,
-        device_id: deviceId || '',
-        title: device.name,
-      };
-
-      this.config = newConfig;
-    }
+    const title = this.config?.title || device?.name || '';
 
     this._handleEntities(this.hass, deviceId);
 
@@ -941,7 +1040,7 @@ class FytaPlantCard extends LitElement {
                 id="name"
                 style="${this.config.state_color_plant === PlantStateColorState.NAME ? `color:${this._getStateColor(SensorTypes.PLANT_STATE, this.hass)};` : ''}"
                 @click="${this._click.bind(this, this._stateEntityIds[SensorTypes.PLANT_STATE])}"
-              >${this.config.title}</span>
+              >${title}</span>
               ${this.config.show_scientific_name ? html`<span id="scientific-name" @click="${this._click.bind(this, this._stateEntityIds[SensorTypes.PLANT_STATE])}">${this.hass.states[this._otherEntityIds[SensorTypes.SCIENTIFIC_NAME]]?.state || ''}</span>`: nothing}
             </div>
             ${this._renderBattery(this.hass)}
