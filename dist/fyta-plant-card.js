@@ -9,6 +9,173 @@ import { map } from "https://unpkg.com/lit-html@3.3.0/directives/map.js?module";
 
 const CUSTOM_CARD_NAME = 'fyta-plant-card';
 
+// Inlined translations. Source of truth: translations/{en,de}.json — keep both in sync.
+// HACS only deploys this single .js file, so the JSON cannot be fetched at runtime.
+const TRANSLATIONS = {
+  en: {
+    editor: {
+      section: {
+        device: 'Plant',
+        measurements: 'Sensor Measurements',
+        layout: 'Layout',
+        nutrition_info_title: 'Nutrition and Salinity',
+        nutrition_info_description: 'The Nutrition Score combines multiple measurements (salinity, conductivity, growth data, and fertilization timing) into a single metric. Showing salinity separately is generally not needed as it is already included in this score.',
+      },
+      field: {
+        device_id: 'Device (Required)',
+        title: 'Title',
+        battery_threshold: 'Battery Threshold (%)',
+        display_mode: 'Display Mode',
+        state_color_plant: 'Expose plant state',
+        preferred_image: 'Preferred plant image',
+        show_scientific_name: 'Show scientific name',
+        state_color_battery: 'Show battery state color',
+        state_color_sensor: 'Show sensor state color',
+        state_color_icon: 'Show colored state icons',
+        decimals: 'Sensor reading decimals',
+      },
+      option: {
+        display_mode: { full: 'Full', compact: 'Compact' },
+        state_color_plant: { name: 'Name Color', image: 'Image Halo', disabled: 'Disabled' },
+        preferred_image: { user: 'User Image', default: 'Default Image' },
+        decimals: { untouched: 'Unchanged', zero: '0', one: '1' },
+      },
+    },
+    card: {
+      configure_prompt: 'Please select a FYTA device in the card configuration.',
+      sensor_name: {
+        battery: 'Battery',
+        light: 'Light',
+        moisture: 'Soil Moisture',
+        nutrients: 'Nutrition',
+        temperature: 'Ambient Temperature',
+        salinity: 'Salinity',
+      },
+      measurement_status: {
+        no_data: 'No Data',
+        too_low: 'Too Low',
+        low: 'Low',
+        perfect: 'Perfect',
+        high: 'High',
+        too_high: 'Too High',
+      },
+      battery_status: {
+        good: 'Good',
+        full: 'Full',
+        medium: 'Medium',
+        low: 'Low',
+        very_low: 'Very Low',
+        critical: 'Critical',
+        unknown: 'Unknown',
+      },
+      tooltip: {
+        battery_level: 'Battery: {level}%',
+        status: 'Status: {status}',
+        sensor_value: '{name}: {value} {unit}',
+        nutrition_status: 'Nutrition Status: {status}',
+        fertilize_in_one: 'Fertilize in {days} day',
+        fertilize_in_many: 'Fertilize in {days} days',
+        fertilize_overdue_one: 'Fertilization overdue by {days} day',
+        fertilize_overdue_many: 'Fertilization overdue by {days} days',
+        last_fertilization: 'Last Fertilization: {date}',
+        next_fertilization: 'Next Fertilization: {date}',
+      },
+      unit: { day_one: 'day', day_many: 'days' },
+    },
+  },
+  de: {
+    editor: {
+      section: {
+        device: 'Pflanze',
+        measurements: 'Sensor-Messwerte',
+        layout: 'Layout',
+        nutrition_info_title: 'Nährstoffe und Salzgehalt',
+        nutrition_info_description: 'Der Nährstoff-Score fasst mehrere Messwerte (Salzgehalt, Leitfähigkeit, Wachstumsdaten und Düngezeitpunkt) zu einer einzelnen Kennzahl zusammen. Den Salzgehalt separat anzuzeigen ist in der Regel nicht nötig, da er in diesem Wert bereits enthalten ist.',
+      },
+      field: {
+        device_id: 'Gerät (Erforderlich)',
+        title: 'Titel',
+        battery_threshold: 'Batterie-Schwellwert (%)',
+        display_mode: 'Anzeigemodus',
+        state_color_plant: 'Pflanzenstatus anzeigen',
+        preferred_image: 'Bevorzugtes Pflanzenbild',
+        show_scientific_name: 'Wissenschaftlichen Namen anzeigen',
+        state_color_battery: 'Batterie-Statusfarbe anzeigen',
+        state_color_sensor: 'Sensor-Statusfarbe anzeigen',
+        state_color_icon: 'Farbige Status-Symbole anzeigen',
+        decimals: 'Dezimalstellen der Sensorwerte',
+      },
+      option: {
+        display_mode: { full: 'Vollständig', compact: 'Kompakt' },
+        state_color_plant: { name: 'Namensfarbe', image: 'Bildumrandung', disabled: 'Deaktiviert' },
+        preferred_image: { user: 'Eigenes Bild', default: 'Standardbild' },
+        decimals: { untouched: 'Unverändert', zero: '0', one: '1' },
+      },
+    },
+    card: {
+      configure_prompt: 'Bitte wähle ein FYTA-Gerät in der Kartenkonfiguration aus.',
+      sensor_name: {
+        battery: 'Batterie',
+        light: 'Licht',
+        moisture: 'Bodenfeuchte',
+        nutrients: 'Nährstoffe',
+        temperature: 'Umgebungstemperatur',
+        salinity: 'Salzgehalt',
+      },
+      measurement_status: {
+        no_data: 'Keine Daten',
+        too_low: 'Zu niedrig',
+        low: 'Niedrig',
+        perfect: 'Perfekt',
+        high: 'Hoch',
+        too_high: 'Zu hoch',
+      },
+      battery_status: {
+        good: 'Gut',
+        full: 'Voll',
+        medium: 'Mittel',
+        low: 'Niedrig',
+        very_low: 'Sehr niedrig',
+        critical: 'Kritisch',
+        unknown: 'Unbekannt',
+      },
+      tooltip: {
+        battery_level: 'Batterie: {level}%',
+        status: 'Status: {status}',
+        sensor_value: '{name}: {value} {unit}',
+        nutrition_status: 'Nährstoffstatus: {status}',
+        fertilize_in_one: 'Düngen in {days} Tag',
+        fertilize_in_many: 'Düngen in {days} Tagen',
+        fertilize_overdue_one: 'Düngung überfällig seit {days} Tag',
+        fertilize_overdue_many: 'Düngung überfällig seit {days} Tagen',
+        last_fertilization: 'Letzte Düngung: {date}',
+        next_fertilization: 'Nächste Düngung: {date}',
+      },
+      unit: { day_one: 'Tag', day_many: 'Tage' },
+    },
+  },
+};
+
+const _lookupTranslation = (lang, keyParts) => {
+  let node = TRANSLATIONS[lang];
+  for (const part of keyParts) {
+    if (node === null || typeof node !== 'object') return undefined;
+    node = node[part];
+  }
+  return typeof node === 'string' ? node : undefined;
+};
+
+const localize = (hass, key, placeholders = {}) => {
+  const lang = (hass?.language || 'en').toLowerCase().split('-')[0];
+  const keyParts = key.split('.');
+  const value = _lookupTranslation(lang, keyParts) ?? _lookupTranslation('en', keyParts);
+  if (typeof value !== 'string') return key;
+  return Object.keys(placeholders).reduce(
+    (acc, name) => acc.replaceAll(`{${name}}`, String(placeholders[name])),
+    value,
+  );
+};
+
 const DecimalsState = {
   UNTOUCHED: false,
   ZERO: 0,
@@ -130,186 +297,186 @@ const DEFAULT_CONFIG = {
   title: '',
 };
 
-const SCHEMA_PART_ONE = [
-  {
-    name: 'header_device',
-    type: 'constant',
-    label: 'Plant',
-  },
-  {
-    name: 'device_id',
-    label: 'Device (Required)',
-    required: true,
-    selector: {
-      device: {
-        integration: 'fyta',
+const buildSchemaPartOne = (hass) => {
+  const t = (key) => localize(hass, key);
+  return [
+    {
+      name: 'header_device',
+      type: 'constant',
+      label: t('editor.section.device'),
+    },
+    {
+      name: 'device_id',
+      label: t('editor.field.device_id'),
+      required: true,
+      selector: {
+        device: {
+          integration: 'fyta',
+        },
       },
     },
-  },
-  {
-    name: 'title',
-    label: 'Title',
-    selector: {
-      text: {},
-    },
-  },
-  {
-    name: 'header_measurements',
-    type: 'constant',
-    label: 'Sensor Measurements',
-  },
-  {
-    name: 'battery_threshold',
-    label: 'Battery Threshold (%)',
-    selector: {
-      number: {
-        min: 0,
-        max: 100,
-        step: 5,
-        mode: 'slider',
+    {
+      name: 'title',
+      label: t('editor.field.title'),
+      selector: {
+        text: {},
       },
     },
-    default: DEFAULT_CONFIG.battery_threshold,
-  },
-];
+    {
+      name: 'header_measurements',
+      type: 'constant',
+      label: t('editor.section.measurements'),
+    },
+    {
+      name: 'battery_threshold',
+      label: t('editor.field.battery_threshold'),
+      selector: {
+        number: {
+          min: 0,
+          max: 100,
+          step: 5,
+          mode: 'slider',
+        },
+      },
+      default: DEFAULT_CONFIG.battery_threshold,
+    },
+  ];
+};
 
-const SCHEMA_PART_TWO = [
-  {
-    name: 'nutrition_info',
-    type: 'constant',
-    label: 'Nutrition and Salinity',
-    value: 'The Nutrition Score combines multiple measurements (salinity, conductivity, growth data, and fertilization timing) into a single metric. Showing salinity separately is generally not needed as it is already included in this score.',
-  },
-  {
-    name: 'header_layout',
-    type: 'constant',
-    label: 'Layout',
-  },
-  {
-    name: 'display_mode',
-    label: 'Display Mode',
-    selector: {
-      select: {
-        options: [
-          { label: 'Full', value: DisplayMode.FULL },
-          { label: 'Compact', value: DisplayMode.COMPACT },
-        ],
-        mode: 'box',
-      },
+const buildSchemaPartTwo = (hass) => {
+  const t = (key) => localize(hass, key);
+  return [
+    {
+      name: 'nutrition_info',
+      type: 'constant',
+      label: t('editor.section.nutrition_info_title'),
+      value: t('editor.section.nutrition_info_description'),
     },
-    default: DEFAULT_CONFIG.display_mode,
-  },
-  {
-    name: 'state_color_plant',
-    label: 'Expose plant state',
-    selector: {
-      select: {
-        options: [
-          { label: 'Name Color', value: PlantStateColorState.NAME },
-          { label: 'Image Halo', value: PlantStateColorState.IMAGE },
-          { label: 'Disabled', value: PlantStateColorState.DISABLED },
-        ],
-        mode: 'box',
-      },
+    {
+      name: 'header_layout',
+      type: 'constant',
+      label: t('editor.section.layout'),
     },
-    default: DEFAULT_CONFIG.state_color_plant,
-  },
-  {
-    name: 'preferred_image',
-    label: 'Preferred plant image',
-    selector: {
-      select: {
-        options: [
-          { label: 'User Image', value: PreferredPlantImage.USER },
-          { label: 'Default Image', value: PreferredPlantImage.DEFAULT },
-        ],
-        mode: 'box',
+    {
+      name: 'display_mode',
+      label: t('editor.field.display_mode'),
+      selector: {
+        select: {
+          options: [
+            { label: t('editor.option.display_mode.full'), value: DisplayMode.FULL },
+            { label: t('editor.option.display_mode.compact'), value: DisplayMode.COMPACT },
+          ],
+          mode: 'box',
+        },
       },
+      default: DEFAULT_CONFIG.display_mode,
     },
-    default: DEFAULT_CONFIG.preferred_image,
-  },
-  {
-    type: 'grid',
-    schema: [
-      {
-        name: 'show_scientific_name',
-        label: 'Show scientific name',
-        type: 'boolean',
-        selector: { boolean: {} },
-        default: DEFAULT_CONFIG.show_scientific_name,
+    {
+      name: 'state_color_plant',
+      label: t('editor.field.state_color_plant'),
+      selector: {
+        select: {
+          options: [
+            { label: t('editor.option.state_color_plant.name'), value: PlantStateColorState.NAME },
+            { label: t('editor.option.state_color_plant.image'), value: PlantStateColorState.IMAGE },
+            { label: t('editor.option.state_color_plant.disabled'), value: PlantStateColorState.DISABLED },
+          ],
+          mode: 'box',
+        },
       },
-      {
-        name: 'state_color_battery',
-        label: 'Show battery state color',
-        selector: { boolean: {} },
-        default: DEFAULT_CONFIG.state_color_battery,
-      },
-    ],
-  },
-  {
-    type: 'grid',
-    schema: [
-      {
-        name: 'state_color_sensor',
-        label: 'Show sensor state color',
-        selector: { boolean: {} },
-        default: DEFAULT_CONFIG.state_color_sensor,
-      },
-      {
-        name: 'state_color_icon',
-        label: 'Show colored state icons ',
-        selector: { boolean: {} },
-        default: DEFAULT_CONFIG.state_color_icon,
-      },
-    ],
-  },
-  {
-    name: 'decimals',
-    label: 'Sensor reading decimals',
-    selector: {
-      select: {
-        mode: 'dropdown',
-        options: [
-          { label: 'Unchanged', value: DecimalsState.UNTOUCHED },
-          { label: '0', value: DecimalsState.ZERO },
-          { label: '1', value: DecimalsState.ONE },
-        ],
-      },
+      default: DEFAULT_CONFIG.state_color_plant,
     },
-    default: DEFAULT_CONFIG.decimals,
-  },
-];
+    {
+      name: 'preferred_image',
+      label: t('editor.field.preferred_image'),
+      selector: {
+        select: {
+          options: [
+            { label: t('editor.option.preferred_image.user'), value: PreferredPlantImage.USER },
+            { label: t('editor.option.preferred_image.default'), value: PreferredPlantImage.DEFAULT },
+          ],
+          mode: 'box',
+        },
+      },
+      default: DEFAULT_CONFIG.preferred_image,
+    },
+    {
+      type: 'grid',
+      schema: [
+        {
+          name: 'show_scientific_name',
+          label: t('editor.field.show_scientific_name'),
+          type: 'boolean',
+          selector: { boolean: {} },
+          default: DEFAULT_CONFIG.show_scientific_name,
+        },
+        {
+          name: 'state_color_battery',
+          label: t('editor.field.state_color_battery'),
+          selector: { boolean: {} },
+          default: DEFAULT_CONFIG.state_color_battery,
+        },
+      ],
+    },
+    {
+      type: 'grid',
+      schema: [
+        {
+          name: 'state_color_sensor',
+          label: t('editor.field.state_color_sensor'),
+          selector: { boolean: {} },
+          default: DEFAULT_CONFIG.state_color_sensor,
+        },
+        {
+          name: 'state_color_icon',
+          label: t('editor.field.state_color_icon'),
+          selector: { boolean: {} },
+          default: DEFAULT_CONFIG.state_color_icon,
+        },
+      ],
+    },
+    {
+      name: 'decimals',
+      label: t('editor.field.decimals'),
+      selector: {
+        select: {
+          mode: 'dropdown',
+          options: [
+            { label: t('editor.option.decimals.untouched'), value: DecimalsState.UNTOUCHED },
+            { label: t('editor.option.decimals.zero'), value: DecimalsState.ZERO },
+            { label: t('editor.option.decimals.one'), value: DecimalsState.ONE },
+          ],
+        },
+      },
+      default: DEFAULT_CONFIG.decimals,
+    },
+  ];
+};
 
 const SENSOR_SETTINGS = {
   [SensorTypes.BATTERY]: {
     min: 0,
     max: 100,
     icon: 'mdi:battery',
-    name: 'Battery',
   },
   [SensorTypes.LIGHT]: {
     icon: 'mdi:white-balance-sunny',
-    name: 'Light',
   },
   [SensorTypes.MOISTURE]: {
     min: 0,
     max: 100,
     icon: 'mdi:water',
-    name: 'Soil Moisture',
   },
   [SensorTypes.NUTRIENTS]: {
     icon: 'mdi:bucket',
-    name: 'Nutrition',
   },
   [SensorTypes.TEMPERATURE]: {
     min: 0,
     max: 50,
     icon: 'mdi:thermometer',
-    name: 'Ambient Temperature',
   },
   [SensorTypes.SALINITY]: {
     icon: 'mdi:water-percent',
-    name: 'Salinity',
   },
 };
 
@@ -1006,7 +1173,7 @@ class FytaPlantCard extends LitElement {
       return html`
         <ha-card>
           <hui-warning>
-            Please select a FYTA device in the card configuration.
+            ${localize(this.hass, 'card.configure_prompt')}
           </hui-warning>
         </ha-card>
       `;
@@ -1071,37 +1238,30 @@ class FytaPlantCard extends LitElement {
       return '';
     }
 
-    const BatteryStatusText = {
-      GOOD: 'Good',
-      FULL: 'Full',
-      MEDIUM: 'Medium',
-      LOW: 'Low',
-      VERY_LOW: 'Very Low',
-      CRITICAL: 'Critical',
-      UNKNOWN: 'Unknown',
-    };
-
     const thresholdLevels = [
-      { threshold: 91, icon: 'mdi:battery', color: 'var(--state-sensor-battery-high-color, #4caf50)', statusText: BatteryStatusText.FULL },
-      { threshold: 81, icon: 'mdi:battery-90', color: 'var(--state-sensor-battery-high-color, #4caf50)', statusText: BatteryStatusText.GOOD },
-      { threshold: 71, icon: 'mdi:battery-80', color: 'var(--state-sensor-battery-high-color, #4caf50)', statusText: BatteryStatusText.GOOD },
-      { threshold: 61, icon: 'mdi:battery-70', color: 'var(--state-sensor-battery-high-color, #4caf50)', statusText: BatteryStatusText.GOOD },
-      { threshold: 51, icon: 'mdi:battery-60', color: 'var(--state-sensor-battery-high-color, #4caf50)', statusText: BatteryStatusText.GOOD },
-      { threshold: 41, icon: 'mdi:battery-50', color: 'var(--state-sensor-battery-high-color, #4caf50)', statusText: BatteryStatusText.MEDIUM },
-      { threshold: 31, icon: 'mdi:battery-40', color: 'var(--state-sensor-battery-high-color, #4caf50)', statusText: BatteryStatusText.MEDIUM },
-      { threshold: 21, icon: 'mdi:battery-30', color: 'var(--state-sensor-battery-medium-color, #ff9800)', statusText: BatteryStatusText.LOW },
-      { threshold: 11, icon: 'mdi:battery-20', color: 'var(--state-sensor-battery-medium-color, #ff9800)', statusText: BatteryStatusText.LOW },
-      { threshold: 6, icon: 'mdi:battery-10', color: 'var(--state-sensor-battery-low-color, #f44336)', statusText: BatteryStatusText.VERY_LOW },
-      { threshold: 0, icon: 'mdi:battery-alert', color: 'var(--state-sensor-battery-low-color, #f44336)', statusText: BatteryStatusText.CRITICAL },
-      { threshold: -Infinity, icon: 'mdi:battery-alert-variant-outline', color: 'var(--state-sensor-battery-low-color, #f44336)', statusText: BatteryStatusText.UNKNOWN },
+      { threshold: 91, icon: 'mdi:battery', color: 'var(--state-sensor-battery-high-color, #4caf50)', statusKey: 'full' },
+      { threshold: 81, icon: 'mdi:battery-90', color: 'var(--state-sensor-battery-high-color, #4caf50)', statusKey: 'good' },
+      { threshold: 71, icon: 'mdi:battery-80', color: 'var(--state-sensor-battery-high-color, #4caf50)', statusKey: 'good' },
+      { threshold: 61, icon: 'mdi:battery-70', color: 'var(--state-sensor-battery-high-color, #4caf50)', statusKey: 'good' },
+      { threshold: 51, icon: 'mdi:battery-60', color: 'var(--state-sensor-battery-high-color, #4caf50)', statusKey: 'good' },
+      { threshold: 41, icon: 'mdi:battery-50', color: 'var(--state-sensor-battery-high-color, #4caf50)', statusKey: 'medium' },
+      { threshold: 31, icon: 'mdi:battery-40', color: 'var(--state-sensor-battery-high-color, #4caf50)', statusKey: 'medium' },
+      { threshold: 21, icon: 'mdi:battery-30', color: 'var(--state-sensor-battery-medium-color, #ff9800)', statusKey: 'low' },
+      { threshold: 11, icon: 'mdi:battery-20', color: 'var(--state-sensor-battery-medium-color, #ff9800)', statusKey: 'low' },
+      { threshold: 6, icon: 'mdi:battery-10', color: 'var(--state-sensor-battery-low-color, #f44336)', statusKey: 'very_low' },
+      { threshold: 0, icon: 'mdi:battery-alert', color: 'var(--state-sensor-battery-low-color, #f44336)', statusKey: 'critical' },
+      { threshold: -Infinity, icon: 'mdi:battery-alert-variant-outline', color: 'var(--state-sensor-battery-low-color, #f44336)', statusKey: 'unknown' },
     ];
 
-    const { icon, color, statusText } = thresholdLevels.find(({ threshold }) => batteryLevel >= threshold) || { icon: 'mdi:battery-alert-variant-outline', color: 'var(--red-color, #f44336)', statusText: BatteryStatusText.UNKNOWN };
+    const { icon, color, statusKey } = thresholdLevels.find(({ threshold }) => batteryLevel >= threshold) || { icon: 'mdi:battery-alert-variant-outline', color: 'var(--red-color, #f44336)', statusKey: 'unknown' };
+    const statusText = localize(hass, `card.battery_status.${statusKey}`);
+    const batteryLine = localize(hass, 'card.tooltip.battery_level', { level: batteryLevel });
+    const statusLine = localize(hass, 'card.tooltip.status', { status: statusText });
 
     return html`
       <div id="plant-battery">
         <div class="battery tooltip" @click="${this._click.bind(this, entityId)}">
-          <div class="tip" style="text-align:center;">Battery: ${batteryLevel}%<br>Status: ${statusText}</div>
+          <div class="tip" style="text-align:center;">${batteryLine}<br>${statusLine}</div>
           <ha-icon icon="${icon}" style="${this.config.state_color_battery ? `color: ${color};` : ''}"></ha-icon>
         </div>
       </div>
@@ -1161,26 +1321,32 @@ class FytaPlantCard extends LitElement {
   }
 
   _buildNutritionTooltipContent(statusState, daysUntilFertilization, lastFertilizationDateString, nextFertilizationDateString) {
-    const nutritionStatus = statusState.replace(/_/g, ' ');
+    const hass = this.hass;
+    const nutritionStatus = statusState
+      ? localize(hass, `card.measurement_status.${statusState}`)
+      : '';
     const showFertilization = daysUntilFertilization !== null && !isNaN(daysUntilFertilization);
 
     let fertilizationLine = nothing;
     if (showFertilization) {
-      const daysText = Math.abs(daysUntilFertilization) === 1 ? 'day' : 'days';
-      fertilizationLine = daysUntilFertilization >= 0
-        ? html`<br>Fertilize in ${daysUntilFertilization} ${daysText}`
-        : html`<br>Fertilization overdue by ${Math.abs(daysUntilFertilization)} ${daysText}`;
+      const days = Math.abs(daysUntilFertilization);
+      const suffix = days === 1 ? 'one' : 'many';
+      const lineKey = daysUntilFertilization >= 0
+        ? `card.tooltip.fertilize_in_${suffix}`
+        : `card.tooltip.fertilize_overdue_${suffix}`;
+      fertilizationLine = html`<br>${localize(hass, lineKey, { days })}`;
     }
 
     const lastFertilizationLine = lastFertilizationDateString
-      ? html`<br>Last Fertilization: ${this._formatDateForDisplay(lastFertilizationDateString)}`
+      ? html`<br>${localize(hass, 'card.tooltip.last_fertilization', { date: this._formatDateForDisplay(lastFertilizationDateString) })}`
       : nothing;
 
     const nextFertilizationLine = nextFertilizationDateString
-      ? html`<br>Next Fertilization: ${this._formatDateForDisplay(nextFertilizationDateString)}`
+      ? html`<br>${localize(hass, 'card.tooltip.next_fertilization', { date: this._formatDateForDisplay(nextFertilizationDateString) })}`
       : nothing;
 
-    return html`Nutrition Status: ${nutritionStatus}${fertilizationLine}${lastFertilizationLine}${nextFertilizationLine}`;
+    const statusLine = localize(hass, 'card.tooltip.nutrition_status', { status: nutritionStatus });
+    return html`${statusLine}${fertilizationLine}${lastFertilizationLine}${nextFertilizationLine}`;
   }
 
   _renderSensors(hass) {
@@ -1242,7 +1408,16 @@ class FytaPlantCard extends LitElement {
       const meterState = this._calculateMeterState(sensorSettings, sensorEntity, sensorStatus);
 
       // Generate tooltip content with current value and status - use full unit
-      const tooltipContent = html`${sensorSettings.name}: ${formattedSensorValue} ${unitOfMeasurement}${sensorStatus ? html`<br>Status: ${sensorStatus.replace(/_/g, ' ')}` : nothing}`;
+      const sensorName = localize(hass, `card.sensor_name.${sensorType}`);
+      const valueLine = localize(hass, 'card.tooltip.sensor_value', {
+        name: sensorName,
+        value: formattedSensorValue,
+        unit: unitOfMeasurement,
+      });
+      const statusLine = sensorStatus
+        ? html`<br>${localize(hass, 'card.tooltip.status', { status: localize(hass, `card.measurement_status.${sensorStatus}`) })}`
+        : nothing;
+      const tooltipContent = html`${valueLine}${statusLine}`;
 
       return html`
         <div class="attribute tooltip" @click="${this._click.bind(this, sensorEntityId)}" data-entity="${sensorEntityId}">
@@ -1294,7 +1469,7 @@ class FytaPlantCard extends LitElement {
             <span class="${this.config.state_color_sensor ? `${meterState.class}` : ''}" style="width: ${meterState.percentage}%;"></span>
           </div>
           <div class="sensor-value">${sensorValue}</div>
-          <div class="uom">${Math.abs(daysUntilFertilization) === 1 ? 'day' : 'days'}</div>
+          <div class="uom">${localize(hass, Math.abs(daysUntilFertilization) === 1 ? 'card.unit.day_one' : 'card.unit.day_many')}</div>
         </div>
       `;
     };
@@ -1450,7 +1625,7 @@ export class FytaPlantCardEditor extends LitElement {
           <ha-form
             .hass=${this.hass}
             .data=${this.config}
-            .schema=${SCHEMA_PART_ONE}
+            .schema=${buildSchemaPartOne(this.hass)}
             .computeLabel=${this._computeLabel}
             @value-changed=${this._valueChanged}
           ></ha-form>
@@ -1475,7 +1650,7 @@ export class FytaPlantCardEditor extends LitElement {
                       icon="${SENSOR_SETTINGS[type].icon}"
                       style="color:${this._getSensorColor(type, isEnabled)}"></ha-svg-icon>
                   </div>
-                  <div class="item-label">${SENSOR_SETTINGS[type].name}</div>
+                  <div class="item-label">${localize(this.hass, `card.sensor_name.${type}`)}</div>
                 </div>
               `
               )}
@@ -1484,7 +1659,7 @@ export class FytaPlantCardEditor extends LitElement {
           <ha-form
             .hass=${this.hass}
             .data=${this.config}
-            .schema=${SCHEMA_PART_TWO}
+            .schema=${buildSchemaPartTwo(this.hass)}
             .computeLabel=${this._computeLabel}
             @value-changed=${this._valueChanged}
           ></ha-form>

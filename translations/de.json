@@ -1,0 +1,88 @@
+{
+  "editor": {
+    "section": {
+      "device": "Pflanze",
+      "measurements": "Sensorwerte",
+      "layout": "Layout",
+      "nutrition_info_title": "Nährstoffe und Salzgehalt",
+      "nutrition_info_description": "Der Nährstoff-Score fasst mehrere Messwerte (Salzgehalt, Leitfähigkeit, Wachstumsdaten und Düngezeitpunkt) zu einer einzelnen Kennzahl zusammen. Den Salzgehalt separat anzuzeigen ist in der Regel nicht nötig, da er in diesem Wert bereits enthalten ist."
+    },
+    "field": {
+      "device_id": "Gerät (Erforderlich)",
+      "title": "Titel",
+      "battery_threshold": "Batterie-Schwellwert (%)",
+      "display_mode": "Anzeigemodus",
+      "state_color_plant": "Pflanzenstatus anzeigen",
+      "preferred_image": "Bevorzugtes Bild",
+      "show_scientific_name": "Wissenschaftlichen Namen anzeigen",
+      "state_color_battery": "Batterie-Statusfarbe verwenden",
+      "state_color_sensor": "Sensor-Statusfarbe verwenden",
+      "state_color_icon": "Status-Farbe für Icons verwenden",
+      "decimals": "Dezimalstellen der Sensorwerte"
+    },
+    "option": {
+      "display_mode": {
+        "full": "Vollständig",
+        "compact": "Kompakt"
+      },
+      "state_color_plant": {
+        "name": "Namensfarbe",
+        "image": "Bildumrandung",
+        "disabled": "Deaktiviert"
+      },
+      "preferred_image": {
+        "user": "Eigenes Bild",
+        "default": "Standardbild"
+      },
+      "decimals": {
+        "untouched": "Unverändert",
+        "zero": "0",
+        "one": "1"
+      }
+    }
+  },
+  "card": {
+    "configure_prompt": "Bitte wähle ein FYTA-Gerät in der Kartenkonfiguration aus.",
+    "sensor_name": {
+      "battery": "Batterie",
+      "light": "Licht",
+      "moisture": "Bodenfeuchte",
+      "nutrients": "Nährstoffe",
+      "temperature": "Umgebungstemperatur",
+      "salinity": "Salzgehalt"
+    },
+    "measurement_status": {
+      "no_data": "Keine Daten",
+      "too_low": "Zu niedrig",
+      "low": "Niedrig",
+      "perfect": "Perfekt",
+      "high": "Hoch",
+      "too_high": "Zu hoch"
+    },
+    "battery_status": {
+      "good": "Gut",
+      "full": "Voll",
+      "medium": "Mittel",
+      "low": "Niedrig",
+      "very_low": "Sehr niedrig",
+      "critical": "Kritisch",
+      "unknown": "Unbekannt"
+    },
+    "tooltip": {
+      "battery_level": "Batterie: {level}%",
+      "status": "Status: {status}",
+      "sensor_value": "{name}: {value} {unit}",
+      "nutrition_status": "Nährstoffstatus: {status}",
+      "fertilize_in_one": "Düngen in {days} Tag",
+      "fertilize_in_many": "Düngen in {days} Tagen",
+      "fertilize_overdue_one": "Düngung überfällig seit {days} Tag",
+      "fertilize_overdue_many": "Düngung überfällig seit {days} Tagen",
+      "last_fertilization": "Letzte Düngung: {date}",
+      "next_fertilization": "Nächste Düngung: {date}"
+    },
+    "unit": {
+      "day_one": "Tag",
+      "day_many": "Tage"
+    }
+  }
+}

@@ -1,0 +1,88 @@
+{
+  "editor": {
+    "section": {
+      "device": "Plant",
+      "measurements": "Sensor Measurements",
+      "layout": "Layout",
+      "nutrition_info_title": "Nutrition and Salinity",
+      "nutrition_info_description": "The Nutrition Score combines multiple measurements (salinity, conductivity, growth data, and fertilization timing) into a single metric. Showing salinity separately is generally not needed as it is already included in this score."
+    },
+    "field": {
+      "device_id": "Device (Required)",
+      "title": "Title",
+      "battery_threshold": "Battery Threshold (%)",
+      "display_mode": "Display Mode",
+      "state_color_plant": "Expose plant state",
+      "preferred_image": "Preferred plant image",
+      "show_scientific_name": "Show scientific name",
+      "state_color_battery": "Show battery state color",
+      "state_color_sensor": "Show sensor state color",
+      "state_color_icon": "Show colored state icons",
+      "decimals": "Sensor reading decimals"
+    },
+    "option": {
+      "display_mode": {
+        "full": "Full",
+        "compact": "Compact"
+      },
+      "state_color_plant": {
+        "name": "Name Color",
+        "image": "Image Halo",
+        "disabled": "Disabled"
+      },
+      "preferred_image": {
+        "user": "User Image",
+        "default": "Default Image"
+      },
+      "decimals": {
+        "untouched": "Unchanged",
+        "zero": "0",
+        "one": "1"
+      }
+    }
+  },
+  "card": {
+    "configure_prompt": "Please select a FYTA device in the card configuration.",
+    "sensor_name": {
+      "battery": "Battery",
+      "light": "Light",
+      "moisture": "Soil Moisture",
+      "nutrients": "Nutrition",
+      "temperature": "Ambient Temperature",
+      "salinity": "Salinity"
+    },
+    "measurement_status": {
+      "no_data": "No Data",
+      "too_low": "Too Low",
+      "low": "Low",
+      "perfect": "Perfect",
+      "high": "High",
+      "too_high": "Too High"
+    },
+    "battery_status": {
+      "good": "Good",
+      "full": "Full",
+      "medium": "Medium",
+      "low": "Low",
+      "very_low": "Very Low",
+      "critical": "Critical",
+      "unknown": "Unknown"
+    },
+    "tooltip": {
+      "battery_level": "Battery: {level}%",
+      "status": "Status: {status}",
+      "sensor_value": "{name}: {value} {unit}",
+      "nutrition_status": "Nutrition Status: {status}",
+      "fertilize_in_one": "Fertilize in {days} day",
+      "fertilize_in_many": "Fertilize in {days} days",
+      "fertilize_overdue_one": "Fertilization overdue by {days} day",
+      "fertilize_overdue_many": "Fertilization overdue by {days} days",
+      "last_fertilization": "Last Fertilization: {date}",
+      "next_fertilization": "Next Fertilization: {date}"
+    },
+    "unit": {
+      "day_one": "day",
+      "day_many": "days"
+    }
+  }
+}
