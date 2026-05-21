@@ -542,6 +542,296 @@ const parseConfig = (config) => {
   return newConfig;
 };
 
+const buildEmptyEntityMaps = () => ({
+  measurementIds: {
+    [SensorTypes.BATTERY]: '',
+    [SensorTypes.LIGHT]: '',
+    [SensorTypes.MOISTURE]: '',
+    [SensorTypes.TEMPERATURE]: '',
+    [SensorTypes.SALINITY]: '',
+  },
+  stateIds: {
+    [SensorTypes.LIGHT_STATE]: '',
+    [SensorTypes.MOISTURE_STATE]: '',
+    [SensorTypes.NUTRIENTS_STATE]: '',
+    [SensorTypes.PLANT_STATE]: '',
+    [SensorTypes.SALINITY_STATE]: '',
+    [SensorTypes.TEMPERATURE_STATE]: '',
+  },
+  otherIds: {
+    [SensorTypes.FERTILIZATION_LAST]: '',
+    [SensorTypes.FERTILIZATION_NEXT]: '',
+    [SensorTypes.PLANT_IMAGE_DEFAULT]: '',
+    [SensorTypes.PLANT_IMAGE_USER]: '',
+    [SensorTypes.SCIENTIFIC_NAME]: '',
+  },
+});
+
+const classifyPlantEntity = (id, hass, maps) => {
+  const hassState = hass.states[id];
+  if (!hassState) return;
+
+  const hassEntity = hass.entities[id];
+  if (!hassEntity) return;
+
+  if (id.startsWith('image.')) {
+    if (hassEntity.translation_key === TranslationKeys.PLANT_IMAGE_USER) {
+      maps.otherIds[SensorTypes.PLANT_IMAGE_USER] = hassState.entity_id;
+      return;
+    }
+    maps.otherIds[SensorTypes.PLANT_IMAGE_DEFAULT] = hassState.entity_id;
+    return;
+  }
+
+  if (!id.startsWith(EntityType.SENSOR)) return;
+
+  switch (hassEntity.translation_key) {
+    case TranslationKeys.LIGHT_STATUS:
+    case TranslationKeys.MOISTURE_STATUS:
+    case TranslationKeys.NUTRIENTS_STATUS:
+    case TranslationKeys.PLANT_STATUS:
+    case TranslationKeys.SALINITY_STATUS:
+    case TranslationKeys.TEMPERATURE_STATUS: {
+      maps.stateIds[hassEntity.translation_key.replace('_status', '')] = hassState.entity_id;
+      return;
+    }
+    case TranslationKeys.FERTILIZATION_LAST: {
+      maps.otherIds[SensorTypes.FERTILIZATION_LAST] = hassState.entity_id;
+      return;
+    }
+    case TranslationKeys.FERTILIZATION_NEXT: {
+      maps.otherIds[SensorTypes.FERTILIZATION_NEXT] = hassState.entity_id;
+      return;
+    }
+    case TranslationKeys.LIGHT: {
+      maps.measurementIds[SensorTypes.LIGHT] = hassState.entity_id;
+      return;
+    }
+    case TranslationKeys.SALINITY: {
+      maps.measurementIds[SensorTypes.SALINITY] = hassState.entity_id;
+      return;
+    }
+    case TranslationKeys.SCIENTIFIC_NAME: {
+      maps.otherIds[SensorTypes.SCIENTIFIC_NAME] = hassState.entity_id;
+      return;
+    }
+    default: {
+      switch (hassState.attributes.device_class) {
+        case DeviceClass.BATTERY:
+        case DeviceClass.MOISTURE:
+        case DeviceClass.TEMPERATURE: {
+          maps.measurementIds[hassState.attributes.device_class] = hassState.entity_id;
+          return;
+        }
+      }
+    }
+  }
+};
+
+const entityStateSignature = (hass, entityId) => {
+  const state = hass.states[entityId];
+  if (!state) return 'missing';
+
+  if (entityId.startsWith('image.')) {
+    return JSON.stringify([state.attributes?.entity_picture || '']);
+  }
+
+  return JSON.stringify([
+    state.state,
+    state.attributes?.entity_picture || '',
+    state.attributes?.unit_of_measurement || '',
+    state.display_precision ?? '',
+  ]);
+};
+
+const resolvePlantEntities = (hass, deviceId) => {
+  if (!hass || !deviceId) return null;
+
+  const maps = buildEmptyEntityMaps();
+  Object.keys(hass.entities || {})
+    .filter((id) => hass.entities[id].device_id === deviceId)
+    .forEach((id) => classifyPlantEntity(id, hass, maps));
+
+  const trackedIds = [
+    ...Object.values(maps.measurementIds),
+    ...Object.values(maps.stateIds),
+    ...Object.values(maps.otherIds),
+  ].filter(Boolean).sort();
+
+  const deviceName = hass.devices?.[deviceId]?.name || '';
+  const signature = JSON.stringify({
+    deviceName,
+    maps,
+    trackedIds,
+    states: trackedIds.map((id) => entityStateSignature(hass, id)),
+  });
+
+  return Object.freeze({
+    measurementIds: Object.freeze({ ...maps.measurementIds }),
+    stateIds: Object.freeze({ ...maps.stateIds }),
+    otherIds: Object.freeze({ ...maps.otherIds }),
+    trackedIds,
+    signature,
+  });
+};
+
+const MeterClass = {
+  BAD: 'bad',
+  GOOD: 'good',
+  UNAVAILABLE: 'unavailable',
+  WARNING: 'warning',
+};
+
+const calculateMeterState = (sensorSettings, sensorEntity, statusState) => {
+  const sensorValue = sensorEntity !== null ? sensorEntity.state : null;
+  let percentage = null;
+  if (sensorValue !== null && sensorSettings.min !== null && sensorSettings.max != null) {
+    const calculatedPercentage = (sensorValue - sensorSettings.min) / (sensorSettings.max - sensorSettings.min) * 100;
+    percentage = Math.max(0, Math.min(100, calculatedPercentage));
+  }
+
+  switch (statusState) {
+    case MeasurementStatusStates.TOO_LOW:
+      return { percentage: percentage !== null ? percentage : 10, class: MeterClass.BAD };
+    case MeasurementStatusStates.LOW:
+      return { percentage: percentage !== null ? percentage : 30, class: MeterClass.WARNING };
+    case MeasurementStatusStates.PERFECT:
+      return { percentage: percentage !== null ? percentage : 50, class: MeterClass.GOOD };
+    case MeasurementStatusStates.HIGH:
+      return { percentage: percentage !== null ? percentage : 70, class: MeterClass.WARNING };
+    case MeasurementStatusStates.TOO_HIGH:
+      return { percentage: percentage !== null ? percentage : 90, class: MeterClass.BAD };
+    default:
+      return { percentage: 0, class: MeterClass.UNAVAILABLE };
+  }
+};
+
+const formatDecimals = (value, decimals = 0) => {
+  const numberValue = Number(value);
+  return isNaN(numberValue) ? '' : numberValue.toFixed(decimals);
+};
+
+const formatSensorValue = (sensorEntity, configDecimals) => {
+  const sensorValue = sensorEntity.state;
+  if (configDecimals !== false) {
+    return formatDecimals(sensorValue, configDecimals);
+  }
+  const entityPrecision = sensorEntity.display_precision;
+  return isNaN(entityPrecision) ? sensorValue : formatDecimals(sensorValue, entityPrecision);
+};
+
+// Only show the part before "/" if it exists
+const formatDisplayUnit = (unit) => {
+  if (!unit) return '';
+  return unit.split('/')[0];
+};
+
+// Strip the time component from an ISO date string
+const formatDateForDisplay = (dateString) => {
+  if (!dateString) return '';
+  if (dateString.includes('T')) {
+    return dateString.split('T')[0];
+  }
+  return dateString;
+};
+
+const calculateDaysFromNow = (inputDateString) => {
+  if (!inputDateString) return null;
+  const currentDate = new Date();
+  currentDate.setHours(0, 0, 0, 0);
+  const inputDate = new Date(inputDateString);
+  const DAY_IN_MILLISECONDS = 24 * 60 * 60 * 1000;
+  return Math.ceil((inputDate.getTime() - currentDate.getTime()) / DAY_IN_MILLISECONDS);
+};
+
+const colorForMeasurementState = (state) =>
+  MeasurementStatusColors[state || MeasurementStatusStates.NO_DATA];
+
+const buildNutritionViewModel = (hass, entities) => {
+  const statusEntityId = entities.stateIds[SensorTypes.NUTRIENTS_STATE] || '';
+  const sensorState = hass.states[statusEntityId]?.state || '';
+
+  const fertiliseLastEntityId = entities.otherIds[SensorTypes.FERTILIZATION_LAST] || '';
+  const fertiliseNextEntityId = entities.otherIds[SensorTypes.FERTILIZATION_NEXT] || '';
+
+  const nextFertilizationDateString =
+    fertiliseNextEntityId && hass.states[fertiliseNextEntityId] ? hass.states[fertiliseNextEntityId].state : null;
+  const lastFertilizationDateString =
+    fertiliseLastEntityId && hass.states[fertiliseLastEntityId] ? hass.states[fertiliseLastEntityId].state : null;
+  const daysUntilFertilization = nextFertilizationDateString ? calculateDaysFromNow(nextFertilizationDateString) : null;
+
+  return {
+    kind: 'nutrition',
+    sensorType: SensorTypes.NUTRIENTS,
+    entityId: statusEntityId,
+    icon: SENSOR_SETTINGS[SensorTypes.NUTRIENTS].icon,
+    color: colorForMeasurementState(sensorState),
+    meter: calculateMeterState(SENSOR_SETTINGS[SensorTypes.NUTRIENTS], null, sensorState),
+    status: sensorState,
+    daysUntilFertilization,
+    lastFertilizationDateString,
+    nextFertilizationDateString,
+  };
+};
+
+const BATTERY_APPEARANCE_FALLBACK = Object.freeze({
+  icon: 'mdi:battery-alert-variant-outline',
+  color: 'var(--red-color, #f44336)',
+  statusKey: 'unknown',
+});
+
+const BATTERY_APPEARANCE_LEVELS = Object.freeze([
+  { threshold: 91, icon: 'mdi:battery',        color: 'var(--state-sensor-battery-high-color, #4caf50)',   statusKey: 'full' },
+  { threshold: 81, icon: 'mdi:battery-90',     color: 'var(--state-sensor-battery-high-color, #4caf50)',   statusKey: 'good' },
+  { threshold: 71, icon: 'mdi:battery-80',     color: 'var(--state-sensor-battery-high-color, #4caf50)',   statusKey: 'good' },
+  { threshold: 61, icon: 'mdi:battery-70',     color: 'var(--state-sensor-battery-high-color, #4caf50)',   statusKey: 'good' },
+  { threshold: 51, icon: 'mdi:battery-60',     color: 'var(--state-sensor-battery-high-color, #4caf50)',   statusKey: 'good' },
+  { threshold: 41, icon: 'mdi:battery-50',     color: 'var(--state-sensor-battery-high-color, #4caf50)',   statusKey: 'medium' },
+  { threshold: 31, icon: 'mdi:battery-40',     color: 'var(--state-sensor-battery-high-color, #4caf50)',   statusKey: 'medium' },
+  { threshold: 21, icon: 'mdi:battery-30',     color: 'var(--state-sensor-battery-medium-color, #ff9800)', statusKey: 'low' },
+  { threshold: 11, icon: 'mdi:battery-20',     color: 'var(--state-sensor-battery-medium-color, #ff9800)', statusKey: 'low' },
+  { threshold: 6,  icon: 'mdi:battery-10',     color: 'var(--state-sensor-battery-low-color, #f44336)',    statusKey: 'very_low' },
+  { threshold: 0,  icon: 'mdi:battery-alert',  color: 'var(--state-sensor-battery-low-color, #f44336)',    statusKey: 'critical' },
+  { threshold: -Infinity, icon: 'mdi:battery-alert-variant-outline', color: 'var(--state-sensor-battery-low-color, #f44336)', statusKey: 'unknown' },
+]);
+
+const batteryAppearance = (batteryLevel) => {
+  if (typeof batteryLevel !== 'number' || isNaN(batteryLevel)) {
+    return BATTERY_APPEARANCE_FALLBACK;
+  }
+  return BATTERY_APPEARANCE_LEVELS.find(({ threshold }) => batteryLevel >= threshold) || BATTERY_APPEARANCE_FALLBACK;
+};
+
+const buildSensorViewModel = (sensorType, hass, entities, config) => {
+  if (sensorType === SensorTypes.NUTRIENTS) {
+    return buildNutritionViewModel(hass, entities);
+  }
+
+  const sensorEntityId = entities.measurementIds[sensorType] || '';
+  if (!sensorEntityId) return null;
+
+  const sensorEntity = hass.states[sensorEntityId];
+  if (!sensorEntity) return null;
+
+  const sensorSettings = SENSOR_SETTINGS[sensorType];
+  const statusEntityId = entities.stateIds[sensorType] || '';
+  const status = statusEntityId ? (hass.states[statusEntityId]?.state || '') : '';
+  const unitOfMeasurement = sensorEntity.attributes.unit_of_measurement || '';
+
+  return {
+    kind: 'meter',
+    sensorType,
+    entityId: sensorEntityId,
+    icon: sensorSettings.icon,
+    color: colorForMeasurementState(status),
+    formattedValue: formatSensorValue(sensorEntity, config.decimals),
+    unitOfMeasurement,
+    displayUnit: formatDisplayUnit(unitOfMeasurement),
+    meter: calculateMeterState(sensorSettings, sensorEntity, status),
+    status,
+  };
+};
+
 class FytaPlantCard extends LitElement {
   static properties = {
     hass: { attribute: false },
@@ -561,61 +851,7 @@ class FytaPlantCard extends LitElement {
 
     this.attachShadow({ mode: 'open' });
 
-    this._resetEntityIds();
-  }
-
-  _resetEntityIds() {
-    this._measurementEntityIds = {
-      [SensorTypes.BATTERY]: '',
-      [SensorTypes.LIGHT]: '',
-      [SensorTypes.MOISTURE]: '',
-      [SensorTypes.TEMPERATURE]: '',
-      [SensorTypes.SALINITY]: '',
-    };
-
-    this._stateEntityIds = {
-      [SensorTypes.LIGHT_STATE]: '',
-      [SensorTypes.MOISTURE_STATE]: '',
-      [SensorTypes.NUTRIENTS_STATE]: '',
-      [SensorTypes.PLANT_STATE]: '',
-      [SensorTypes.SALINITY_STATE]: '',
-      [SensorTypes.TEMPERATURE_STATE]: '',
-    };
-
-    this._otherEntityIds = {
-      [SensorTypes.FERTILIZATION_LAST]: '',
-      [SensorTypes.FERTILIZATION_NEXT]: '',
-      [SensorTypes.PLANT_IMAGE_DEFAULT]: '',
-      [SensorTypes.PLANT_IMAGE_USER]: '',
-      [SensorTypes.SCIENTIFIC_NAME]: '',
-    };
-  }
-
-  _createEntityIdMaps() {
-    return {
-      measurementEntityIds: {
-        [SensorTypes.BATTERY]: '',
-        [SensorTypes.LIGHT]: '',
-        [SensorTypes.MOISTURE]: '',
-        [SensorTypes.TEMPERATURE]: '',
-        [SensorTypes.SALINITY]: '',
-      },
-      stateEntityIds: {
-        [SensorTypes.LIGHT_STATE]: '',
-        [SensorTypes.MOISTURE_STATE]: '',
-        [SensorTypes.NUTRIENTS_STATE]: '',
-        [SensorTypes.PLANT_STATE]: '',
-        [SensorTypes.SALINITY_STATE]: '',
-        [SensorTypes.TEMPERATURE_STATE]: '',
-      },
-      otherEntityIds: {
-        [SensorTypes.FERTILIZATION_LAST]: '',
-        [SensorTypes.FERTILIZATION_NEXT]: '',
-        [SensorTypes.PLANT_IMAGE_DEFAULT]: '',
-        [SensorTypes.PLANT_IMAGE_USER]: '',
-        [SensorTypes.SCIENTIFIC_NAME]: '',
-      },
-    };
+    this._entities = null;
   }
 
   _calculateSize(gridSize) {
@@ -654,24 +890,6 @@ class FytaPlantCard extends LitElement {
     this.config = parseConfig(config);
   }
 
-  _calculateDaysFromNow(inputDateString) {
-    if (!inputDateString) return null;
-
-    // Create Date object for the current date - use local midnight
-    const currentDate = new Date();
-    currentDate.setHours(0, 0, 0, 0);
-
-    // Create Date object for the input date handling ISO input format (YYYY-MM-DDThh:mm:ss)
-    const inputDate = new Date(inputDateString);
-
-    // Calculate time difference in milliseconds
-    const timeDifference = inputDate.getTime() - currentDate.getTime();
-
-    // Convert milliseconds to days
-    const DAY_IN_MILLISECONDS = 24 * 60 * 60 * 1000;
-    return Math.ceil(timeDifference / DAY_IN_MILLISECONDS);
-  }
-
   _click(entityId) {
     if (!entityId) return;
     const event = new Event(('hass-more-info'), {
@@ -685,18 +903,19 @@ class FytaPlantCard extends LitElement {
   }
 
   _getStateColor(stateType, hass) {
+    const stateIds = this._entities?.stateIds || {};
     switch (stateType) {
       case SensorTypes.LIGHT_STATE:
       case SensorTypes.MOISTURE_STATE:
       case SensorTypes.NUTRIENTS_STATE:
       case SensorTypes.SALINITY_STATE:
       case SensorTypes.TEMPERATURE_STATE: {
-        const entityId = this._stateEntityIds[stateType];
+        const entityId = stateIds[stateType] || '';
         const state = hass.states[entityId]?.state || MeasurementStatusStates.NO_DATA;
         return MeasurementStatusColors[state];
       }
       case SensorTypes.PLANT_STATE: {
-        const entityId = this._stateEntityIds[stateType];
+        const entityId = stateIds[stateType] || '';
         const state = hass.states[entityId]?.state || PlantStatusStates.NO_SENSOR;
         return PlantStautsColors[state];
       }
@@ -706,191 +925,24 @@ class FytaPlantCard extends LitElement {
     }
   }
 
-  // Format date for display: Remove time component
-  _formatDateForDisplay(dateString) {
-    if (!dateString) return '';
-
-    // If date contains a T (ISO format), split and return just the date part
-    if (dateString.includes('T')) {
-      return dateString.split('T')[0];
-    }
-
-    return dateString;
-  }
-
-  // Format unit for card display (only show part before "/" if it exists)
-  _formatDisplayUnit(unit) {
-    if (!unit) return '';
-    const parts = unit.split('/');
-    return parts[0];
-  }
-
-  _formatDecimals(value, decimals = 0) {
-    const numberValue = Number(value);
-    return isNaN(numberValue) ? '' : numberValue.toFixed(decimals);
-  }
-
-  _formatSensorValue(sensorEntity, configDecimals) {
-    const sensorValue = sensorEntity.state;
-    if (configDecimals !== false) {
-      return this._formatDecimals(sensorValue, configDecimals);
-    }
-
-    const entityPrecision = sensorEntity.display_precision;
-    return isNaN(entityPrecision) ? sensorValue : this._formatDecimals(sensorValue, entityPrecision);
-  }
-
   _getPlantImageSrc(hass) {
+    const otherIds = this._entities?.otherIds || {};
+
     if (this.config.preferred_image === PreferredPlantImage.USER) {
-      const userImageEntityId = this._otherEntityIds[SensorTypes.PLANT_IMAGE_USER];
+      const userImageEntityId = otherIds[SensorTypes.PLANT_IMAGE_USER];
 
       if (userImageEntityId && hass.states[userImageEntityId]?.attributes.entity_picture) {
         return hass.states[userImageEntityId]?.attributes.entity_picture || '';
       }
     }
 
-    const defaultImageEntityId = this._otherEntityIds[SensorTypes.PLANT_IMAGE_DEFAULT];
+    const defaultImageEntityId = otherIds[SensorTypes.PLANT_IMAGE_DEFAULT];
     if (defaultImageEntityId && hass.states[defaultImageEntityId]?.attributes.entity_picture) {
       return hass.states[defaultImageEntityId]?.attributes.entity_picture || '';
     }
 
     return '';
   };
-
-  _handleEntity(id, hass, entityIdMaps = {
-    measurementEntityIds: this._measurementEntityIds,
-    stateEntityIds: this._stateEntityIds,
-    otherEntityIds: this._otherEntityIds,
-  }) {
-    const hassState = hass.states[id];
-    if (!hassState) return;
-
-    const hassEntity = hass.entities[id];
-    if (!hassEntity) return;
-
-    if (id.startsWith('image.')) {
-      if (hassEntity.translation_key === TranslationKeys.PLANT_IMAGE_USER) {
-        entityIdMaps.otherEntityIds[SensorTypes.PLANT_IMAGE_USER] = hassState.entity_id;
-        return;
-      }
-      entityIdMaps.otherEntityIds[SensorTypes.PLANT_IMAGE_DEFAULT] = hassState.entity_id;
-      return;
-    }
-
-    if (id.startsWith(EntityType.IMAGE)) {
-      this._plantImage = hass.states[id].attributes.entity_picture;
-      return;
-    }
-
-    if (id.startsWith(EntityType.SENSOR)) {
-      switch (hassEntity.translation_key) {
-        case TranslationKeys.LIGHT_STATUS:
-        case TranslationKeys.MOISTURE_STATUS:
-        case TranslationKeys.NUTRIENTS_STATUS:
-        case TranslationKeys.PLANT_STATUS:
-        case TranslationKeys.SALINITY_STATUS:
-        case TranslationKeys.TEMPERATURE_STATUS: {
-          entityIdMaps.stateEntityIds[hassEntity.translation_key.replace('_status', '')] = hassState.entity_id;
-          return;
-        }
-
-        case TranslationKeys.FERTILIZATION_LAST: {
-          entityIdMaps.otherEntityIds[SensorTypes.FERTILIZATION_LAST] = hassState.entity_id;
-          return;
-        }
-        case TranslationKeys.FERTILIZATION_NEXT: {
-          entityIdMaps.otherEntityIds[SensorTypes.FERTILIZATION_NEXT] = hassState.entity_id;
-          return;
-        }
-        case TranslationKeys.LIGHT: {
-          entityIdMaps.measurementEntityIds[SensorTypes.LIGHT] = hassState.entity_id;
-          return;
-        }
-        case TranslationKeys.SALINITY: {
-          entityIdMaps.measurementEntityIds[SensorTypes.SALINITY] = hassState.entity_id;
-          return;
-        }
-        case TranslationKeys.SCIENTIFIC_NAME: {
-          entityIdMaps.otherEntityIds[SensorTypes.SCIENTIFIC_NAME] = hassState.entity_id;
-          return;
-        }
-
-        default: {
-          switch (hassState.attributes.device_class) {
-            case DeviceClass.BATTERY:
-            case DeviceClass.MOISTURE:
-            case DeviceClass.TEMPERATURE: {
-              entityIdMaps.measurementEntityIds[hassState.attributes.device_class] = hassState.entity_id;
-              return;
-            }
-          }
-        }
-      }
-    }
-  }
-
-  _resolveEntityIds(hass, deviceId) {
-    const entityIdMaps = this._createEntityIdMaps();
-
-    Object.keys(hass.entities || {})
-      .filter((id) => hass.entities[id].device_id === deviceId)
-      .forEach((id) => this._handleEntity(id, hass, entityIdMaps), this);
-
-    return entityIdMaps;
-  }
-
-  _handleEntities(hass, deviceId) {
-    const entityIdMaps = this._resolveEntityIds(hass, deviceId);
-    this._measurementEntityIds = entityIdMaps.measurementEntityIds;
-    this._stateEntityIds = entityIdMaps.stateEntityIds;
-    this._otherEntityIds = entityIdMaps.otherEntityIds;
-  }
-
-  _getTrackedEntityIds(entityIdMaps) {
-    return [
-      ...Object.values(entityIdMaps.measurementEntityIds),
-      ...Object.values(entityIdMaps.stateEntityIds),
-      ...Object.values(entityIdMaps.otherEntityIds),
-    ].filter(Boolean).sort();
-  }
-
-  _getEntityStateSignature(hass, entityId) {
-    const state = hass.states[entityId];
-    if (!state) {
-      return 'missing';
-    }
-
-    if (entityId.startsWith('image.')) {
-      return JSON.stringify([
-        state.attributes?.entity_picture || '',
-      ]);
-    }
-
-    return JSON.stringify([
-      state.state,
-      state.attributes?.entity_picture || '',
-      state.attributes?.unit_of_measurement || '',
-      state.display_precision ?? '',
-    ]);
-  }
-
-  _getHassSignature(hass) {
-    if (!hass || !this.config?.device_id) {
-      return '';
-    }
-
-    const deviceId = this.config.device_id;
-    const entityIdMaps = this._resolveEntityIds(hass, deviceId);
-    const trackedEntityIds = this._getTrackedEntityIds(entityIdMaps);
-    const deviceName = hass.devices?.[deviceId]?.name || '';
-
-    return JSON.stringify({
-      deviceName,
-      entityIdMaps,
-      trackedEntityIds,
-      states: trackedEntityIds.map((entityId) => this._getEntityStateSignature(hass, entityId)),
-    });
-  }
 
   shouldUpdate(changedProps) {
     if (changedProps.has('config') || !changedProps.has('hass')) {
@@ -902,7 +954,10 @@ class FytaPlantCard extends LitElement {
       return true;
     }
 
-    return this._getHassSignature(oldHass) !== this._getHassSignature(this.hass);
+    const deviceId = this.config.device_id;
+    const oldSignature = resolvePlantEntities(oldHass, deviceId)?.signature || '';
+    const newSignature = resolvePlantEntities(this.hass, deviceId)?.signature || '';
+    return oldSignature !== newSignature;
   }
 
   static get styles() {
@@ -1188,7 +1243,9 @@ class FytaPlantCard extends LitElement {
     const device = this.hass.devices[deviceId];
     const title = this.config?.title || device?.name || '';
 
-    this._handleEntities(this.hass, deviceId);
+    this._entities = resolvePlantEntities(this.hass, deviceId);
+    const plantStateEntityId = this._entities?.stateIds[SensorTypes.PLANT_STATE] || '';
+    const scientificNameEntityId = this._entities?.otherIds[SensorTypes.SCIENTIFIC_NAME] || '';
 
     return html`
       <ha-card>
@@ -1199,16 +1256,16 @@ class FytaPlantCard extends LitElement {
                 src="${this._getPlantImageSrc(this.hass)}"
                 class="${this.config.state_color_plant === PlantStateColorState.IMAGE ? 'state' : ''}"
                 style="${this.config.state_color_plant === PlantStateColorState.IMAGE ? `border-color:${this._getStateColor(SensorTypes.PLANT_STATE, this.hass)};` : ''}"
-                @click="${this._click.bind(this, this._stateEntityIds[SensorTypes.PLANT_STATE])}"
+                @click="${this._click.bind(this, plantStateEntityId)}"
               >
             </div>
             <div id="plant-text">
               <span
                 id="name"
                 style="${this.config.state_color_plant === PlantStateColorState.NAME ? `color:${this._getStateColor(SensorTypes.PLANT_STATE, this.hass)};` : ''}"
-                @click="${this._click.bind(this, this._stateEntityIds[SensorTypes.PLANT_STATE])}"
+                @click="${this._click.bind(this, plantStateEntityId)}"
               >${title}</span>
-              ${this.config.show_scientific_name ? html`<span id="scientific-name" @click="${this._click.bind(this, this._stateEntityIds[SensorTypes.PLANT_STATE])}">${this.hass.states[this._otherEntityIds[SensorTypes.SCIENTIFIC_NAME]]?.state || ''}</span>`: nothing}
+              ${this.config.show_scientific_name ? html`<span id="scientific-name" @click="${this._click.bind(this, plantStateEntityId)}">${this.hass.states[scientificNameEntityId]?.state || ''}</span>`: nothing}
             </div>
             ${this._renderBattery(this.hass)}
           </div>
@@ -1222,38 +1279,20 @@ class FytaPlantCard extends LitElement {
   }
 
   _renderBattery(hass) {
-    if (this._measurementEntityIds[SensorTypes.BATTERY] === '') {
+    const entityId = this._entities?.measurementIds[SensorTypes.BATTERY] || '';
+    if (entityId === '') {
       return nothing;
     }
 
-    const entityId = this._measurementEntityIds[SensorTypes.BATTERY];
     const batteryLevel = parseInt(hass.states[entityId].state);
-
-    // Check against the user-configured threshold
     const threshold = this.config?.battery_threshold ?? DEFAULT_CONFIG.battery_threshold;
 
-    // Only show battery if level is at or below the threshold
-    // Skip showing if threshold is 0 (never show)
+    // Display policy: 0 means never show; otherwise only show at or below the threshold.
     if (threshold === 0 || batteryLevel > threshold) {
       return '';
     }
 
-    const thresholdLevels = [
-      { threshold: 91, icon: 'mdi:battery', color: 'var(--state-sensor-battery-high-color, #4caf50)', statusKey: 'full' },
-      { threshold: 81, icon: 'mdi:battery-90', color: 'var(--state-sensor-battery-high-color, #4caf50)', statusKey: 'good' },
-      { threshold: 71, icon: 'mdi:battery-80', color: 'var(--state-sensor-battery-high-color, #4caf50)', statusKey: 'good' },
-      { threshold: 61, icon: 'mdi:battery-70', color: 'var(--state-sensor-battery-high-color, #4caf50)', statusKey: 'good' },
-      { threshold: 51, icon: 'mdi:battery-60', color: 'var(--state-sensor-battery-high-color, #4caf50)', statusKey: 'good' },
-      { threshold: 41, icon: 'mdi:battery-50', color: 'var(--state-sensor-battery-high-color, #4caf50)', statusKey: 'medium' },
-      { threshold: 31, icon: 'mdi:battery-40', color: 'var(--state-sensor-battery-high-color, #4caf50)', statusKey: 'medium' },
-      { threshold: 21, icon: 'mdi:battery-30', color: 'var(--state-sensor-battery-medium-color, #ff9800)', statusKey: 'low' },
-      { threshold: 11, icon: 'mdi:battery-20', color: 'var(--state-sensor-battery-medium-color, #ff9800)', statusKey: 'low' },
-      { threshold: 6, icon: 'mdi:battery-10', color: 'var(--state-sensor-battery-low-color, #f44336)', statusKey: 'very_low' },
-      { threshold: 0, icon: 'mdi:battery-alert', color: 'var(--state-sensor-battery-low-color, #f44336)', statusKey: 'critical' },
-      { threshold: -Infinity, icon: 'mdi:battery-alert-variant-outline', color: 'var(--state-sensor-battery-low-color, #f44336)', statusKey: 'unknown' },
-    ];
-
-    const { icon, color, statusKey } = thresholdLevels.find(({ threshold }) => batteryLevel >= threshold) || { icon: 'mdi:battery-alert-variant-outline', color: 'var(--red-color, #f44336)', statusKey: 'unknown' };
+    const { icon, color, statusKey } = batteryAppearance(batteryLevel);
     const statusText = localize(hass, `card.battery_status.${statusKey}`);
     const batteryLine = localize(hass, 'card.tooltip.battery_level', { level: batteryLevel });
     const statusLine = localize(hass, 'card.tooltip.status', { status: statusText });
@@ -1268,231 +1307,125 @@ class FytaPlantCard extends LitElement {
     `;
   }
 
-  _calculateMeterState(sensorSettings, sensorEntity, statusState) {
-    const MeterClass = {
-      BAD: 'bad',
-      GOOD: 'good',
-      UNAVAILABLE: 'unavailable',
-      WARNING: 'warning',
-    };
-
-    const sensorValue = sensorEntity !== null ? sensorEntity.state : null;
-    let percentage = null;
-    if (sensorValue !== null && sensorSettings.min !== null && sensorSettings.max != null) {
-      const calculatedPercentage = (sensorValue - sensorSettings.min) / (sensorSettings.max - sensorSettings.min) * 100;
-      percentage = Math.max(0, Math.min(100, calculatedPercentage));
-    }
-
-    switch (statusState) {
-      case MeasurementStatusStates.TOO_LOW: {
-        return {
-          percentage: percentage !== null ? percentage : 10,
-          class: MeterClass.BAD,
-        };
-      }
-      case MeasurementStatusStates.LOW: {
-        return {
-          percentage: percentage !== null ? percentage : 30,
-          class: MeterClass.WARNING,
-        };
-      }
-      case MeasurementStatusStates.PERFECT: {
-        return {
-          percentage: percentage !== null ? percentage : 50,
-          class: MeterClass.GOOD,
-        };
-      }
-      case MeasurementStatusStates.HIGH: {
-        return {
-          percentage: percentage !== null ? percentage : 70,
-          class: MeterClass.WARNING,
-        };
-      }
-      case MeasurementStatusStates.TOO_HIGH: {
-        return {
-          percentage: percentage !== null ? percentage : 90,
-          class: MeterClass.BAD,
-        };
-      }
-      default: {
-        return { percentage: 0, class: MeterClass.UNAVAILABLE };
-      }
-    }
-  }
-
-  _buildNutritionTooltipContent(statusState, daysUntilFertilization, lastFertilizationDateString, nextFertilizationDateString) {
+  _renderNutritionTooltip(vm) {
     const hass = this.hass;
-    const nutritionStatus = statusState
-      ? localize(hass, `card.measurement_status.${statusState}`)
+    const nutritionStatus = vm.status
+      ? localize(hass, `card.measurement_status.${vm.status}`)
       : '';
-    const showFertilization = daysUntilFertilization !== null && !isNaN(daysUntilFertilization);
+    const showFertilization = vm.daysUntilFertilization !== null && !isNaN(vm.daysUntilFertilization);
 
     let fertilizationLine = nothing;
     if (showFertilization) {
-      const days = Math.abs(daysUntilFertilization);
+      const days = Math.abs(vm.daysUntilFertilization);
       const suffix = days === 1 ? 'one' : 'many';
-      const lineKey = daysUntilFertilization >= 0
+      const lineKey = vm.daysUntilFertilization >= 0
         ? `card.tooltip.fertilize_in_${suffix}`
         : `card.tooltip.fertilize_overdue_${suffix}`;
       fertilizationLine = html`<br>${localize(hass, lineKey, { days })}`;
     }
 
-    const lastFertilizationLine = lastFertilizationDateString
-      ? html`<br>${localize(hass, 'card.tooltip.last_fertilization', { date: this._formatDateForDisplay(lastFertilizationDateString) })}`
+    const lastFertilizationLine = vm.lastFertilizationDateString
+      ? html`<br>${localize(hass, 'card.tooltip.last_fertilization', { date: formatDateForDisplay(vm.lastFertilizationDateString) })}`
       : nothing;
 
-    const nextFertilizationLine = nextFertilizationDateString
-      ? html`<br>${localize(hass, 'card.tooltip.next_fertilization', { date: this._formatDateForDisplay(nextFertilizationDateString) })}`
+    const nextFertilizationLine = vm.nextFertilizationDateString
+      ? html`<br>${localize(hass, 'card.tooltip.next_fertilization', { date: formatDateForDisplay(vm.nextFertilizationDateString) })}`
       : nothing;
 
     const statusLine = localize(hass, 'card.tooltip.nutrition_status', { status: nutritionStatus });
     return html`${statusLine}${fertilizationLine}${lastFertilizationLine}${nextFertilizationLine}`;
   }
 
-  _renderSensors(hass) {
-    // Filter enabled sensors based on entity ID availability
-    const visibleSensors = this.config.sensors?.filter((sensorSettings) => {
-      return sensorSettings && sensorSettings.isEnabled && this._measurementEntityIds[sensorSettings.type] !== '';
+  _renderSensorVm(vm) {
+    return vm.kind === 'nutrition' ? this._renderNutritionVm(vm) : this._renderMeterVm(vm);
+  }
+
+  _renderMeterVm(vm) {
+    const hass = this.hass;
+    const sensorName = localize(hass, `card.sensor_name.${vm.sensorType}`);
+    const valueLine = localize(hass, 'card.tooltip.sensor_value', {
+      name: sensorName,
+      value: vm.formattedValue,
+      unit: vm.unitOfMeasurement,
     });
+    const statusLine = vm.status
+      ? html`<br>${localize(hass, 'card.tooltip.status', { status: localize(hass, `card.measurement_status.${vm.status}`) })}`
+      : nothing;
+    const tooltipContent = html`${valueLine}${statusLine}`;
 
-    if (!visibleSensors || visibleSensors.length === 0) {
-      return nothing;
-    }
+    return html`
+      <div class="attribute tooltip" @click="${this._click.bind(this, vm.entityId)}" data-entity="${vm.entityId}">
+        <div class="tip" style="text-align:center;">${tooltipContent}</div>
+        <ha-icon icon="${vm.icon}" style="${this.config.state_color_icon ? `color:${vm.color};` : ''}"></ha-icon>
+        <div class="meter">
+          <span class="${this.config.state_color_sensor ? `${vm.meter.class}` : ''}" style="width: ${vm.meter.percentage}%;"></span>
+        </div>
+        <div class="sensor-value">${vm.formattedValue}</div>
+        <div class="uom">${vm.displayUnit}</div>
+      </div>
+    `;
+  }
 
-    // Distribute items into columns considering their total number
+  _renderNutritionVm(vm) {
+    const tooltipContent = this._renderNutritionTooltip(vm);
+    const sensorValue = vm.daysUntilFertilization !== null && !isNaN(vm.daysUntilFertilization) ? vm.daysUntilFertilization : '-';
+    const unitKey = Math.abs(vm.daysUntilFertilization) === 1 ? 'card.unit.day_one' : 'card.unit.day_many';
+
+    return html`
+      <div class="attribute tooltip" @click="${this._click.bind(this, vm.entityId)}" data-entity="${vm.entityId}">
+        <div class="tip" style="text-align:center;">${tooltipContent}</div>
+        <ha-icon icon="${vm.icon}" style="${this.config.state_color_icon ? ` color:${vm.color};` : ''}"></ha-icon>
+        <div class="meter">
+          <span class="${this.config.state_color_sensor ? `${vm.meter.class}` : ''}" style="width: ${vm.meter.percentage}%;"></span>
+        </div>
+        <div class="sensor-value">${sensorValue}</div>
+        <div class="uom">${localize(this.hass, unitKey)}</div>
+      </div>
+    `;
+  }
+
+  _renderSensors(hass) {
+    const entities = this._entities;
+    if (!entities) return nothing;
+
+    const viewModels = (this.config.sensors || [])
+      .filter((s) => s && s.isEnabled)
+      .map((s) => buildSensorViewModel(s.type, hass, entities, this.config))
+      .filter((vm) => vm !== null);
+
+    if (viewModels.length === 0) return nothing;
+
+    // Even count: distribute evenly across two columns.
+    // Odd count: the last view-model spans full width below the columns.
     const leftColumnItems = [];
     const rightColumnItems = [];
-    let fullWidthSensor = null;
+    let fullWidthVm = null;
 
-    // Even number of sensors - distribute evenly
-    // Odd number of sensors - always make the last item full-width
-    visibleSensors.forEach((sensorSetting, index) => {
+    viewModels.forEach((vm, index) => {
       if (index % 2 === 0) {
-        if (index === visibleSensors.length - 1) {
-          // Store the sensor that should be displayed full-width
-          fullWidthSensor = sensorSetting.type;
+        if (index === viewModels.length - 1) {
+          fullWidthVm = vm;
         } else {
-          leftColumnItems.push(sensorSetting.type);
+          leftColumnItems.push(vm);
         }
       } else {
-        rightColumnItems.push(sensorSetting.type);
+        rightColumnItems.push(vm);
       }
     });
 
-    // Render a single sensor
-    const renderSensor = (sensorType) => {
-      if (sensorType === SensorTypes.NUTRIENTS) {
-        return renderNutrition();
-      }
+    const renderVm = (vm) => this._renderSensorVm(vm);
 
-      const sensorSettings = SENSOR_SETTINGS[sensorType];
-      const sensorEntityId = this._measurementEntityIds[sensorType];
-      const sensorEntity = hass.states[sensorEntityId];
-
-      const formattedSensorValue = this._formatSensorValue(sensorEntity, this.config.decimals);
-
-      // Get proper units for display and tooltip
-      const unitOfMeasurement = hass.states[sensorEntityId].attributes.unit_of_measurement || '';
-
-      // Get the proper status entity
-      let sensorStatus = '';
-
-      const statusEntityId = this._stateEntityIds[sensorType];
-      if (statusEntityId) {
-        sensorStatus = hass.states[statusEntityId].state;
-      }
-
-      const color = this._getStateColor(sensorType, hass);
-
-      // Calculate meter width and class based on status
-      const meterState = this._calculateMeterState(sensorSettings, sensorEntity, sensorStatus);
-
-      // Generate tooltip content with current value and status - use full unit
-      const sensorName = localize(hass, `card.sensor_name.${sensorType}`);
-      const valueLine = localize(hass, 'card.tooltip.sensor_value', {
-        name: sensorName,
-        value: formattedSensorValue,
-        unit: unitOfMeasurement,
-      });
-      const statusLine = sensorStatus
-        ? html`<br>${localize(hass, 'card.tooltip.status', { status: localize(hass, `card.measurement_status.${sensorStatus}`) })}`
-        : nothing;
-      const tooltipContent = html`${valueLine}${statusLine}`;
-
-      return html`
-        <div class="attribute tooltip" @click="${this._click.bind(this, sensorEntityId)}" data-entity="${sensorEntityId}">
-          <div class="tip" style="text-align:center;">${tooltipContent}</div>
-          <ha-icon icon="${sensorSettings.icon}" style="${this.config.state_color_icon ? `color:${color};` : ''}"></ha-icon>
-          <div class="meter">
-            <span class="${this.config.state_color_sensor ? `${meterState.class}` : ''}" style="width: ${meterState.percentage}%;"></span>
-          </div>
-          <div class="sensor-value">${formattedSensorValue}</div>
-          <div class="uom">${this._formatDisplayUnit(unitOfMeasurement)}</div>
-        </div>
-      `;
-    };
-
-    // Render nutrition status
-    const renderNutrition = () => {
-      const statusEntityId = this._stateEntityIds[SensorTypes.NUTRIENTS_STATE];
-      const sensorState = hass.states[statusEntityId]?.state;
-      const color = this._getStateColor(SensorTypes.NUTRIENTS_STATE, hass);
-
-      // Get fertilizations date if available
-      const fertiliseLastEntityId = this._otherEntityIds[SensorTypes.FERTILIZATION_LAST];
-      const fertiliseNextEntityId = this._otherEntityIds[SensorTypes.FERTILIZATION_NEXT];
-      let daysUntilFertilization = null;
-      let lastFertilizationDateString = null;
-      let nextFertilizationDateString = null;
-
-      if (fertiliseNextEntityId && hass.states[fertiliseNextEntityId]) {
-        nextFertilizationDateString = hass.states[fertiliseNextEntityId].state;
-        daysUntilFertilization = this._calculateDaysFromNow(nextFertilizationDateString);
-      }
-
-      if (fertiliseLastEntityId && hass.states[fertiliseLastEntityId]) {
-        lastFertilizationDateString = hass.states[fertiliseLastEntityId].state;
-      }
-
-      // Format the next fertilization date for display
-      const meterState = this._calculateMeterState(SENSOR_SETTINGS[SensorTypes.NUTRIENTS], null, sensorState);
-
-      // Build tooltip content
-      const tooltipContent = this._buildNutritionTooltipContent(sensorState, daysUntilFertilization, lastFertilizationDateString, nextFertilizationDateString);
-      const sensorValue = daysUntilFertilization !== null && !isNaN(daysUntilFertilization) ? daysUntilFertilization : '-';
-
-      return html`
-        <div class="attribute tooltip" @click="${this._click.bind(this, statusEntityId)}" data-entity="${statusEntityId}">
-          <div class="tip" style="text-align:center;">${tooltipContent}</div>
-          <ha-icon icon="${SENSOR_SETTINGS[SensorTypes.NUTRIENTS].icon}" style="${this.config.state_color_icon ? ` color:${color};` : ''}"></ha-icon>
-          <div class="meter">
-            <span class="${this.config.state_color_sensor ? `${meterState.class}` : ''}" style="width: ${meterState.percentage}%;"></span>
-          </div>
-          <div class="sensor-value">${sensorValue}</div>
-          <div class="uom">${localize(hass, Math.abs(daysUntilFertilization) === 1 ? 'card.unit.day_one' : 'card.unit.day_many')}</div>
-        </div>
-      `;
-    };
-
-    // Render sensors in two columns
-    let sensorHtml = html`
+    const sensorHtml = html`
       <div class="sensor-column sensor-column-left">
-        ${join(
-          map(leftColumnItems, (sensor) => renderSensor(sensor)),
-          ''
-        )}
+        ${join(map(leftColumnItems, renderVm), '')}
       </div>
       <div class="sensor-column">
-        ${join(
-          map(rightColumnItems, (sensor) => renderSensor(sensor)),
-          ''
-        )}
+        ${join(map(rightColumnItems, renderVm), '')}
       </div>
     `;
 
-    // Add full-width item if needed
-    if (fullWidthSensor) {
-      return html`${sensorHtml}${renderSensor(fullWidthSensor)}`;
+    if (fullWidthVm) {
+      return html`${sensorHtml}${renderVm(fullWidthVm)}`;
     }
 
     return sensorHtml;
