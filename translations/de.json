@@ -18,6 +18,7 @@
       "state_color_battery": "Batterie-Statusfarbe verwenden",
       "state_color_sensor": "Sensor-Statusfarbe verwenden",
       "state_color_icon": "Status-Farbe für Icons verwenden",
+      "stale_threshold_hours": "Veraltet nach (Stunden)",
       "decimals": "Dezimalstellen der Sensorwerte"
     },
     "option": {
@@ -25,11 +26,7 @@
         "full": "Vollständig",
         "compact": "Kompakt"
       },
-      "state_color_plant": {
-        "name": "Namensfarbe",
-        "image": "Bildumrandung",
-        "disabled": "Deaktiviert"
-      },
+      "state_color_plant": { "image": "Bildumrandung", "name": "Namensfarbe", "disabled": "Deaktiviert" },
       "preferred_image": {
         "user": "Eigenes Bild",
         "default": "Standardbild"
@@ -53,6 +50,8 @@
     },
     "measurement_status": {
       "no_data": "Keine Daten",
+      "stale": "Veraltet",
+      "not_configured": "Nicht konfiguriert",
       "too_low": "Zu niedrig",
       "low": "Niedrig",
       "perfect": "Perfekt",

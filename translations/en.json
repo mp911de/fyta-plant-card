@@ -18,6 +18,7 @@
       "state_color_battery": "Show battery state color",
       "state_color_sensor": "Show sensor state color",
       "state_color_icon": "Show colored state icons",
+      "stale_threshold_hours": "Stale after (hours)",
       "decimals": "Sensor reading decimals"
     },
     "option": {
@@ -25,11 +26,7 @@
         "full": "Full",
         "compact": "Compact"
       },
-      "state_color_plant": {
-        "name": "Name Color",
-        "image": "Image Halo",
-        "disabled": "Disabled"
-      },
+      "state_color_plant": { "image": "Image Halo", "name": "Name Color", "disabled": "Disabled" },
       "preferred_image": {
         "user": "User Image",
         "default": "Default Image"
@@ -53,6 +50,8 @@
     },
     "measurement_status": {
       "no_data": "No Data",
+      "stale": "Stale",
+      "not_configured": "Not Configured",
       "too_low": "Too Low",
       "low": "Low",
       "perfect": "Perfect",

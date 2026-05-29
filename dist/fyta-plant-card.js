@@ -32,11 +32,12 @@ const TRANSLATIONS = {
         state_color_battery: 'Show battery state color',
         state_color_sensor: 'Show sensor state color',
         state_color_icon: 'Show colored state icons',
+        stale_threshold_hours: 'Stale after (hours)',
         decimals: 'Sensor reading decimals',
       },
       option: {
         display_mode: { full: 'Full', compact: 'Compact' },
-        state_color_plant: { name: 'Name Color', image: 'Image Halo', disabled: 'Disabled' },
+        state_color_plant: { image: 'Image Halo', name: 'Name Color', disabled: 'Disabled' },
         preferred_image: { user: 'User Image', default: 'Default Image' },
         decimals: { untouched: 'Unchanged', zero: '0', one: '1' },
       },
@@ -53,6 +54,8 @@ const TRANSLATIONS = {
       },
       measurement_status: {
         no_data: 'No Data',
+        stale: 'Stale',
+        not_configured: 'Not Configured',
         too_low: 'Too Low',
         low: 'Low',
         perfect: 'Perfect',
@@ -108,11 +111,12 @@ const TRANSLATIONS = {
         state_color_battery: 'Batterie-Statusfarbe anzeigen',
         state_color_sensor: 'Sensor-Statusfarbe anzeigen',
         state_color_icon: 'Farbige Status-Symbole anzeigen',
+        stale_threshold_hours: 'Veraltet nach (Stunden)',
         decimals: 'Dezimalstellen der Sensorwerte',
       },
       option: {
         display_mode: { full: 'Vollständig', compact: 'Kompakt' },
-        state_color_plant: { name: 'Namensfarbe', image: 'Bildumrandung', disabled: 'Deaktiviert' },
+        state_color_plant: { image: 'Bildumrandung', name: 'Namensfarbe', disabled: 'Deaktiviert' },
         preferred_image: { user: 'Eigenes Bild', default: 'Standardbild' },
         decimals: { untouched: 'Unverändert', zero: '0', one: '1' },
       },
@@ -129,6 +133,8 @@ const TRANSLATIONS = {
       },
       measurement_status: {
         no_data: 'Keine Daten',
+        stale: 'Veraltet',
+        not_configured: 'Nicht konfiguriert',
         too_low: 'Zu niedrig',
         low: 'Niedrig',
         perfect: 'Perfekt',
@@ -233,7 +239,7 @@ const PlantStatusStates = {
   NO_SENSOR: 'no_sensor',
 };
 
-const PlantStautsColors = {
+const PlantStatusColors = {
   [PlantStatusStates.DELETED]: 'var(--disabled-text-color, #bdbdbd)',
   [PlantStatusStates.DOING_GREAT]: 'var(--green-color, #4caf50)',
   [PlantStatusStates.NEED_ATTENTION]: 'var(--orange-color, #ff9800)',
@@ -302,8 +308,9 @@ const DEFAULT_CONFIG = {
   show_scientific_name: true,
   state_color_battery: true,
   state_color_icon: true,
-  state_color_plant: PlantStateColorState.NAME,
+  state_color_plant: PlantStateColorState.IMAGE,
   state_color_sensor: true,
+  stale_threshold_hours: 8,
   title: '',
 };
 
@@ -387,14 +394,27 @@ const buildSchemaPartTwo = (hass) => {
       selector: {
         select: {
           options: [
-            { label: t('editor.option.state_color_plant.name'), value: PlantStateColorState.NAME },
             { label: t('editor.option.state_color_plant.image'), value: PlantStateColorState.IMAGE },
+            { label: t('editor.option.state_color_plant.name'), value: PlantStateColorState.NAME },
             { label: t('editor.option.state_color_plant.disabled'), value: PlantStateColorState.DISABLED },
           ],
-          mode: 'box',
+          mode: 'dropdown',
         },
       },
       default: DEFAULT_CONFIG.state_color_plant,
+    },
+    {
+      name: 'stale_threshold_hours',
+      label: t('editor.field.stale_threshold_hours'),
+      selector: {
+        number: {
+          min: 1,
+          max: 168,
+          step: 1,
+          mode: 'box',
+        },
+      },
+      default: DEFAULT_CONFIG.stale_threshold_hours,
     },
     {
       name: 'preferred_image',
@@ -405,7 +425,7 @@ const buildSchemaPartTwo = (hass) => {
             { label: t('editor.option.preferred_image.user'), value: PreferredPlantImage.USER },
             { label: t('editor.option.preferred_image.default'), value: PreferredPlantImage.DEFAULT },
           ],
-          mode: 'box',
+          mode: 'dropdown',
         },
       },
       default: DEFAULT_CONFIG.preferred_image,
@@ -519,7 +539,7 @@ const parseConfig = (config) => {
       NUTRITION: 'nutrition'
     };
 
-    const leygacySensorKeyTypes = [
+    const legacySensorKeyTypes = [
       SensorTypes.LIGHT,
       SensorTypes.MOISTURE,
       SensorTypes.TEMPERATURE,
@@ -527,7 +547,7 @@ const parseConfig = (config) => {
       LegacySensorType.NUTRITION,
     ];
 
-    newConfig.sensors = leygacySensorKeyTypes
+    newConfig.sensors = legacySensorKeyTypes
       .map((sensorType) => {
         const orderKey = `${sensorType}_order`;
 
@@ -693,30 +713,42 @@ const MeterClass = {
   BAD: 'bad',
   GOOD: 'good',
   UNAVAILABLE: 'unavailable',
+  STALE: 'stale',
   WARNING: 'warning',
 };
 
-const calculateMeterState = (sensorSettings, sensorEntity, statusState) => {
+const calculateMeterState = (sensorSettings, sensorEntity, statusState, readingState = SensorReadingStates.AVAILABLE) => {
   const sensorValue = sensorEntity !== null ? sensorEntity.state : null;
+  const numericSensorValue = sensorValue !== null && String(sensorValue).trim() !== '' && !isNaN(Number(sensorValue))
+    ? Number(sensorValue)
+    : null;
+
+  if (readingState === SensorReadingStates.NO_DATA || readingState === SensorReadingStates.NOT_CONFIGURED) {
+    return { percentage: 0, class: MeterClass.UNAVAILABLE };
+  }
+
   let percentage = null;
-  if (sensorValue !== null && sensorSettings.min !== null && sensorSettings.max != null) {
-    const calculatedPercentage = (sensorValue - sensorSettings.min) / (sensorSettings.max - sensorSettings.min) * 100;
+  if (numericSensorValue !== null && sensorSettings.min !== null && sensorSettings.max != null) {
+    const calculatedPercentage = (numericSensorValue - sensorSettings.min) / (sensorSettings.max - sensorSettings.min) * 100;
     percentage = Math.max(0, Math.min(100, calculatedPercentage));
   }
 
   switch (statusState) {
     case MeasurementStatusStates.TOO_LOW:
-      return { percentage: percentage !== null ? percentage : 10, class: MeterClass.BAD };
+      return { percentage: percentage !== null ? percentage : 10, class: readingState === SensorReadingStates.STALE ? MeterClass.STALE : MeterClass.BAD };
     case MeasurementStatusStates.LOW:
-      return { percentage: percentage !== null ? percentage : 30, class: MeterClass.WARNING };
+      return { percentage: percentage !== null ? percentage : 30, class: readingState === SensorReadingStates.STALE ? MeterClass.STALE : MeterClass.WARNING };
     case MeasurementStatusStates.PERFECT:
-      return { percentage: percentage !== null ? percentage : 50, class: MeterClass.GOOD };
+      return { percentage: percentage !== null ? percentage : 50, class: readingState === SensorReadingStates.STALE ? MeterClass.STALE : MeterClass.GOOD };
     case MeasurementStatusStates.HIGH:
-      return { percentage: percentage !== null ? percentage : 70, class: MeterClass.WARNING };
+      return { percentage: percentage !== null ? percentage : 70, class: readingState === SensorReadingStates.STALE ? MeterClass.STALE : MeterClass.WARNING };
     case MeasurementStatusStates.TOO_HIGH:
-      return { percentage: percentage !== null ? percentage : 90, class: MeterClass.BAD };
+      return { percentage: percentage !== null ? percentage : 90, class: readingState === SensorReadingStates.STALE ? MeterClass.STALE : MeterClass.BAD };
     default:
-      return { percentage: 0, class: MeterClass.UNAVAILABLE };
+      return {
+        percentage: percentage !== null ? percentage : 0,
+        class: readingState === SensorReadingStates.STALE ? MeterClass.STALE : MeterClass.UNAVAILABLE,
+      };
   }
 };
 
@@ -725,13 +757,21 @@ const formatDecimals = (value, decimals = 0) => {
   return isNaN(numberValue) ? '' : numberValue.toFixed(decimals);
 };
 
+const isNumericSensorState = (value) => value !== null && String(value).trim() !== '' && !isNaN(Number(value));
+
 const formatSensorValue = (sensorEntity, configDecimals) => {
   const sensorValue = sensorEntity.state;
   if (configDecimals !== false) {
     return formatDecimals(sensorValue, configDecimals);
   }
   const entityPrecision = sensorEntity.display_precision;
-  return isNaN(entityPrecision) ? sensorValue : formatDecimals(sensorValue, entityPrecision);
+  if (!isNaN(entityPrecision)) {
+    return formatDecimals(sensorValue, entityPrecision);
+  }
+  // Guard against HA sentinel strings ('unknown', 'unavailable', 'none', …):
+  // only return the raw state when it is actually numeric; otherwise signal
+  // the absence of a reading with an empty string.
+  return isNumericSensorState(sensorValue) ? sensorValue : '';
 };
 
 const formatDisplayUnit = (unit) => {
@@ -773,12 +813,108 @@ const calculateDaysFromNow = (inputDateString) => {
   return Math.round((inputDate.getTime() - currentDate.getTime()) / DAY_IN_MILLISECONDS);
 };
 
+const SensorReadingStates = {
+  AVAILABLE: 'available',
+  NO_DATA: 'no_data',
+  NOT_CONFIGURED: 'not_configured',
+  STALE: 'stale',
+};
+
 const colorForMeasurementState = (state) =>
   MeasurementStatusColors[state || MeasurementStatusStates.NO_DATA];
 
-const buildNutritionViewModel = (hass, entities) => {
+const colorForSensorReadingState = (readingState, status) => {
+  switch (readingState) {
+    case SensorReadingStates.STALE:
+      return 'var(--orange-color, #ff9800)';
+    case SensorReadingStates.NO_DATA:
+    case SensorReadingStates.NOT_CONFIGURED:
+      return 'var(--disabled-text-color, #bdbdbd)';
+    default:
+      return colorForMeasurementState(isMissingSensorState(status) ? MeasurementStatusStates.NO_DATA : status);
+  }
+};
+
+const isMissingSensorState = (value) => {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return normalized === '' || normalized === 'unknown' || normalized === 'unavailable' || normalized === 'none';
+};
+
+const isSensorReadingStale = (sensorEntity, staleThresholdHours) => {
+  const thresholdHours = Number(staleThresholdHours);
+  if (!Number.isFinite(thresholdHours) || thresholdHours <= 0) {
+    return false;
+  }
+
+  const lastUpdatedMs = Date.parse(sensorEntity?.last_updated || '');
+  if (Number.isNaN(lastUpdatedMs)) {
+    return false;
+  }
+
+  const thresholdMs = thresholdHours * 60 * 60 * 1000;
+  return Date.now() - lastUpdatedMs > thresholdMs;
+};
+
+const getNumericSensorReadingState = (sensorEntity, staleThresholdHours) => {
+  if (!sensorEntity) {
+    return SensorReadingStates.NOT_CONFIGURED;
+  }
+  if (!isNumericSensorState(sensorEntity.state)) {
+    return SensorReadingStates.NO_DATA;
+  }
+  return isSensorReadingStale(sensorEntity, staleThresholdHours)
+    ? SensorReadingStates.STALE
+    : SensorReadingStates.AVAILABLE;
+};
+
+const getTextSensorReadingState = (sensorEntity, staleThresholdHours) => {
+  if (!sensorEntity) {
+    return SensorReadingStates.NOT_CONFIGURED;
+  }
+  if (isMissingSensorState(sensorEntity.state)) {
+    return SensorReadingStates.NO_DATA;
+  }
+  return isSensorReadingStale(sensorEntity, staleThresholdHours)
+    ? SensorReadingStates.STALE
+    : SensorReadingStates.AVAILABLE;
+};
+
+const buildMissingMeterViewModel = (sensorType) => ({
+  kind: 'meter',
+  sensorType,
+  entityId: '',
+  icon: SENSOR_SETTINGS[sensorType].icon,
+  color: colorForSensorReadingState(SensorReadingStates.NOT_CONFIGURED, ''),
+  formattedValue: '',
+  unitOfMeasurement: '',
+  displayUnit: '',
+  meter: { percentage: 0, class: MeterClass.UNAVAILABLE },
+  status: '',
+  readingState: SensorReadingStates.NOT_CONFIGURED,
+});
+
+const buildNutritionViewModel = (hass, entities, staleThresholdHours = DEFAULT_CONFIG.stale_threshold_hours) => {
   const statusEntityId = entities.stateIds[SensorTypes.NUTRIENTS_STATE] || '';
-  const sensorState = hass.states[statusEntityId]?.state || '';
+  const sensorEntity = statusEntityId ? hass.states[statusEntityId] : null;
+  const readingState = getTextSensorReadingState(sensorEntity, staleThresholdHours);
+
+  if (readingState === SensorReadingStates.NOT_CONFIGURED) {
+    return {
+      kind: 'nutrition',
+      sensorType: SensorTypes.NUTRIENTS,
+      entityId: '',
+      icon: SENSOR_SETTINGS[SensorTypes.NUTRIENTS].icon,
+      color: colorForSensorReadingState(readingState, ''),
+      meter: { percentage: 0, class: MeterClass.UNAVAILABLE },
+      status: '',
+      readingState,
+      daysUntilFertilization: null,
+      lastFertilizationDateString: null,
+      nextFertilizationDateString: null,
+    };
+  }
+
+  const sensorState = sensorEntity?.state || '';
 
   const fertiliseLastEntityId = entities.otherIds[SensorTypes.FERTILIZATION_LAST] || '';
   const fertiliseNextEntityId = entities.otherIds[SensorTypes.FERTILIZATION_NEXT] || '';
@@ -794,9 +930,10 @@ const buildNutritionViewModel = (hass, entities) => {
     sensorType: SensorTypes.NUTRIENTS,
     entityId: statusEntityId,
     icon: SENSOR_SETTINGS[SensorTypes.NUTRIENTS].icon,
-    color: colorForMeasurementState(sensorState),
-    meter: calculateMeterState(SENSOR_SETTINGS[SensorTypes.NUTRIENTS], null, sensorState),
+    color: colorForSensorReadingState(readingState, sensorState),
+    meter: calculateMeterState(SENSOR_SETTINGS[SensorTypes.NUTRIENTS], null, sensorState, readingState),
     status: sensorState,
+    readingState,
     daysUntilFertilization,
     lastFertilizationDateString,
     nextFertilizationDateString,
@@ -833,31 +970,34 @@ const batteryAppearance = (batteryLevel) => {
 
 const buildSensorViewModel = (sensorType, hass, entities, config) => {
   if (sensorType === SensorTypes.NUTRIENTS) {
-    return buildNutritionViewModel(hass, entities);
+    return buildNutritionViewModel(hass, entities, config.stale_threshold_hours);
   }
 
   const sensorEntityId = entities.measurementIds[sensorType] || '';
-  if (!sensorEntityId) return null;
+  if (!sensorEntityId) return buildMissingMeterViewModel(sensorType);
 
   const sensorEntity = hass.states[sensorEntityId];
-  if (!sensorEntity) return null;
+  if (!sensorEntity) return buildMissingMeterViewModel(sensorType);
 
   const sensorSettings = SENSOR_SETTINGS[sensorType];
   const statusEntityId = entities.stateIds[sensorType] || '';
   const status = statusEntityId ? (hass.states[statusEntityId]?.state || '') : '';
+  const readingState = getNumericSensorReadingState(sensorEntity, config.stale_threshold_hours);
   const unitOfMeasurement = sensorEntity.attributes.unit_of_measurement || '';
+  const hasVisibleValue = readingState === SensorReadingStates.AVAILABLE || readingState === SensorReadingStates.STALE;
 
   return {
     kind: 'meter',
     sensorType,
     entityId: sensorEntityId,
     icon: sensorSettings.icon,
-    color: colorForMeasurementState(status),
-    formattedValue: formatSensorValue(sensorEntity, config.decimals),
+    color: colorForSensorReadingState(readingState, status),
+    formattedValue: hasVisibleValue ? formatSensorValue(sensorEntity, config.decimals) : '',
     unitOfMeasurement,
     displayUnit: formatDisplayUnit(unitOfMeasurement),
-    meter: calculateMeterState(sensorSettings, sensorEntity, status),
+    meter: calculateMeterState(sensorSettings, sensorEntity, status, readingState),
     status,
+    readingState,
   };
 };
 
@@ -955,7 +1095,7 @@ class FytaPlantCard extends LitElement {
       case SensorTypes.PLANT_STATE: {
         const entityId = stateIds[stateType] || '';
         const state = hass.states[entityId]?.state || PlantStatusStates.NO_SENSOR;
-        return PlantStautsColors[state];
+        return PlantStatusColors[state];
       }
       default: {
         return 'var(--primary-text-color, #ffffff)';
@@ -1158,6 +1298,11 @@ class FytaPlantCard extends LitElement {
         background-color: var(--orange-color, #ff9800);
       }
 
+      .meter > .stale {
+        background-color: var(--orange-color, #ff9800);
+        opacity: 0.75;
+      }
+
       .meter > .unavailable {
         background-color: var(--grey-color, #9e9e9e);
       }
@@ -1211,6 +1356,24 @@ class FytaPlantCard extends LitElement {
         min-width: 30px;
         width: auto;
         margin-right: 4px;
+      }
+
+      .sensor-state {
+        flex-shrink: 0;
+        font-size: 0.75em;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+        color: var(--secondary-text-color, #727272);
+        margin-right: 4px;
+      }
+
+      .sensor-state.stale {
+        color: var(--orange-color, #ff9800);
+      }
+
+      .sensor-state.no_data,
+      .sensor-state.not_configured {
+        color: var(--disabled-text-color, #bdbdbd);
       }
 
       .sensor-row {
@@ -1414,10 +1577,16 @@ class FytaPlantCard extends LitElement {
 
   _renderNutritionTooltip(vm) {
     const hass = this.hass;
-    const nutritionStatus = vm.status
+    const hasMeasurementStatus = vm.status && !isMissingSensorState(vm.status);
+    const nutritionStatus = vm.readingState === SensorReadingStates.STALE
+      ? localize(hass, `card.measurement_status.${SensorReadingStates.STALE}`)
+      : hasMeasurementStatus
       ? localize(hass, `card.measurement_status.${vm.status}`)
-      : '';
-    const showFertilization = vm.daysUntilFertilization !== null && !isNaN(vm.daysUntilFertilization);
+      : localize(hass, `card.measurement_status.${vm.readingState}`);
+    const showFertilization =
+      (vm.readingState === SensorReadingStates.AVAILABLE || vm.readingState === SensorReadingStates.STALE) &&
+      vm.daysUntilFertilization !== null &&
+      !isNaN(vm.daysUntilFertilization);
 
     let fertilizationLine = nothing;
     if (showFertilization) {
@@ -1448,16 +1617,26 @@ class FytaPlantCard extends LitElement {
   _renderMeterVm(vm) {
     const hass = this.hass;
     const sensorName = localize(hass, `card.sensor_name.${vm.sensorType}`);
+    const hasSensorValue = vm.readingState === SensorReadingStates.AVAILABLE || vm.readingState === SensorReadingStates.STALE;
+    const displayValue = hasSensorValue
+      ? vm.formattedValue
+      : localize(hass, `card.measurement_status.${vm.readingState}`);
     const valueLine = localize(hass, 'card.tooltip.sensor_value', {
       name: sensorName,
-      value: vm.formattedValue,
-      unit: vm.unitOfMeasurement,
+      value: displayValue,
+      unit: hasSensorValue ? vm.unitOfMeasurement : '',
     });
-    const statusLine = vm.status
-      ? html`<br>${localize(hass, 'card.tooltip.status', { status: localize(hass, `card.measurement_status.${vm.status}`) })}`
+    const statusKey = vm.readingState === SensorReadingStates.STALE
+      ? SensorReadingStates.STALE
+      : (vm.readingState === SensorReadingStates.AVAILABLE && vm.status && !isMissingSensorState(vm.status) ? vm.status : '');
+    const statusLine = statusKey
+      ? html`<br>${localize(hass, 'card.tooltip.status', { status: localize(hass, `card.measurement_status.${statusKey}`) })}`
       : nothing;
     const tooltipContent = html`${valueLine}${statusLine}`;
     const detailsLabel = localize(this.hass, 'card.aria.sensor_details', { name: sensorName });
+    const stateBadge = vm.readingState === SensorReadingStates.AVAILABLE
+      ? nothing
+      : html`<div class="sensor-state ${vm.readingState}">${localize(hass, `card.measurement_status.${vm.readingState}`)}</div>`;
 
     return html`
       <div
@@ -1474,18 +1653,26 @@ class FytaPlantCard extends LitElement {
         <div class="meter">
           <span class="${this.config.state_color_sensor ? `${vm.meter.class}` : ''}" style="width: ${vm.meter.percentage}%;"></span>
         </div>
-        <div class="sensor-value">${vm.formattedValue}</div>
-        <div class="uom">${vm.displayUnit}</div>
+        <div class="sensor-value">${displayValue}</div>
+        <div class="uom">${hasSensorValue ? vm.displayUnit : ''}</div>
+        ${stateBadge}
       </div>
     `;
   }
 
   _renderNutritionVm(vm) {
     const tooltipContent = this._renderNutritionTooltip(vm);
-    const sensorValue = vm.daysUntilFertilization !== null && !isNaN(vm.daysUntilFertilization) ? vm.daysUntilFertilization : '-';
-    const unitKey = Math.abs(vm.daysUntilFertilization) === 1 ? 'card.unit.day_one' : 'card.unit.day_many';
+    const hasSensorValue = vm.readingState === SensorReadingStates.AVAILABLE || vm.readingState === SensorReadingStates.STALE;
+    const hasDaysValue = vm.daysUntilFertilization !== null && !isNaN(vm.daysUntilFertilization);
+    const sensorValue = hasSensorValue
+      ? (hasDaysValue ? vm.daysUntilFertilization : '-')
+      : localize(this.hass, `card.measurement_status.${vm.readingState}`);
+    const unitKey = hasDaysValue && Math.abs(vm.daysUntilFertilization) === 1 ? 'card.unit.day_one' : 'card.unit.day_many';
     const sensorName = localize(this.hass, `card.sensor_name.${vm.sensorType}`);
     const detailsLabel = localize(this.hass, 'card.aria.sensor_details', { name: sensorName });
+    const stateBadge = vm.readingState === SensorReadingStates.AVAILABLE
+      ? nothing
+      : html`<div class="sensor-state ${vm.readingState}">${localize(this.hass, `card.measurement_status.${vm.readingState}`)}</div>`;
 
     return html`
       <div
@@ -1503,7 +1690,8 @@ class FytaPlantCard extends LitElement {
           <span class="${this.config.state_color_sensor ? `${vm.meter.class}` : ''}" style="width: ${vm.meter.percentage}%;"></span>
         </div>
         <div class="sensor-value">${sensorValue}</div>
-        <div class="uom">${localize(this.hass, unitKey)}</div>
+        <div class="uom">${hasSensorValue ? localize(this.hass, unitKey) : ''}</div>
+        ${stateBadge}
       </div>
     `;
   }
@@ -1610,7 +1798,7 @@ export class FytaPlantCardEditor extends LitElement {
     config.sensors = configSensors;
 
     this._configChanged(config);
-  } 
+  }
 
   _itemMoved(event) {
     console.debug('Item moved:', JSON.stringify(event), event);
