@@ -12,13 +12,13 @@
       "title": "Title",
       "battery_threshold": "Battery Threshold (%)",
       "display_mode": "Display Mode",
-      "state_color_plant": "Expose plant state",
-      "preferred_image": "Preferred plant image",
+      "state_color_plant": "State color",
+      "preferred_image": "Preferred image",
       "show_scientific_name": "Show scientific name",
       "state_color_battery": "Show battery state color",
       "state_color_sensor": "Show sensor state color",
       "state_color_icon": "Show colored state icons",
-      "stale_threshold_hours": "Stale after (hours)",
+      "stale_threshold_hours": "Mark unavailable after (hours)",
       "decimals": "Sensor reading decimals"
     },
     "option": {
@@ -26,11 +26,8 @@
         "full": "Full",
         "compact": "Compact"
       },
-      "state_color_plant": { "image": "Image Halo", "name": "Name Color", "disabled": "Disabled" },
-      "preferred_image": {
-        "user": "User Image",
-        "default": "Default Image"
-      },
+      "state_color_plant": { "image": "Image", "name": "Name", "disabled": "Disabled" },
+      "preferred_image": { "user": "User", "default": "Default" },
       "decimals": {
         "untouched": "Unchanged",
         "zero": "0",
@@ -49,9 +46,9 @@
       "salinity": "Salinity"
     },
     "measurement_status": {
-      "no_data": "No Data",
+      "no_data": "Unavailable",
       "stale": "Stale",
-      "not_configured": "Not Configured",
+      "not_configured": "Entity not found",
       "too_low": "Too Low",
       "low": "Low",
       "perfect": "Perfect",

@@ -12,13 +12,13 @@
       "title": "Titel",
       "battery_threshold": "Batterie-Schwellwert (%)",
       "display_mode": "Anzeigemodus",
-      "state_color_plant": "Pflanzenstatus anzeigen",
+      "state_color_plant": "Zustandsfarbe",
       "preferred_image": "Bevorzugtes Bild",
       "show_scientific_name": "Wissenschaftlichen Namen anzeigen",
       "state_color_battery": "Batterie-Statusfarbe verwenden",
       "state_color_sensor": "Sensor-Statusfarbe verwenden",
       "state_color_icon": "Status-Farbe für Icons verwenden",
-      "stale_threshold_hours": "Veraltet nach (Stunden)",
+      "stale_threshold_hours": "Nach (Stunden) als nicht verfügbar markieren",
       "decimals": "Dezimalstellen der Sensorwerte"
     },
     "option": {
@@ -26,11 +26,8 @@
         "full": "Vollständig",
         "compact": "Kompakt"
       },
-      "state_color_plant": { "image": "Bildumrandung", "name": "Namensfarbe", "disabled": "Deaktiviert" },
-      "preferred_image": {
-        "user": "Eigenes Bild",
-        "default": "Standardbild"
-      },
+      "state_color_plant": { "image": "Bild", "name": "Name", "disabled": "Deaktiviert" },
+      "preferred_image": { "user": "Eigenes Bild", "default": "Standard" },
       "decimals": {
         "untouched": "Unverändert",
         "zero": "0",
@@ -49,9 +46,9 @@
       "salinity": "Salzgehalt"
     },
     "measurement_status": {
-      "no_data": "Keine Daten",
+      "no_data": "Nicht verfügbar",
       "stale": "Veraltet",
-      "not_configured": "Nicht konfiguriert",
+      "not_configured": "Entität nicht gefunden",
       "too_low": "Zu niedrig",
       "low": "Niedrig",
       "perfect": "Perfekt",
