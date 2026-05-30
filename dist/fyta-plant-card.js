@@ -1129,6 +1129,10 @@ class FytaPlantCard extends LitElement {
         margin-top: 25px;
       }
 
+      #container {
+        container-type: inline-size;
+      }
+
       img {
         display: block;
         height: auto;
@@ -1212,19 +1216,29 @@ class FytaPlantCard extends LitElement {
       }
 
       .attributes {
-        display: flex;
-        flex-wrap: wrap;
-        justify-content: space-between;
+        --sensor-value-width: 6ch;
+        --sensor-unit-width: 6.6em;
+        column-gap: 12px;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         padding: 16px 16px 8px;
+        row-gap: 8px;
         white-space: nowrap;
       }
 
       .attribute {
-        white-space: nowrap;
-        display: flex;
         align-items: center;
+        column-gap: 8px;
+        display: grid;
+        grid-template-columns: 24px minmax(32px, 1fr) var(--sensor-value-width) var(--sensor-unit-width);
+        min-width: 0;
+        padding-bottom: 0;
+        white-space: nowrap;
         width: 100%;
-        padding-bottom: 8px;
+      }
+
+      .attribute.wide-full {
+        grid-column: 1 / -1;
       }
 
       .interactive {
@@ -1237,15 +1251,16 @@ class FytaPlantCard extends LitElement {
       }
 
       .attribute ha-icon {
-        margin-right: 8px;
         flex-shrink: 0;
+        grid-column: 1;
         width: 24px;
         text-align: center;
       }
 
       .sensor-value {
         flex-shrink: 0;
-        margin-right: 4px;
+        grid-column: 3;
+        margin-right: 0;
         text-align: right;
         min-width: 40px;
       }
@@ -1253,8 +1268,10 @@ class FytaPlantCard extends LitElement {
       .sensor-value.sensor-state {
         color: var(--disabled-text-color, #bdbdbd);
         font-size: 0.75em;
+        grid-column: 3 / 5;
         letter-spacing: 0.02em;
         min-width: auto;
+        text-align: left;
         text-transform: uppercase;
       }
 
@@ -1262,10 +1279,11 @@ class FytaPlantCard extends LitElement {
         height: 8px;
         background-color: var(--primary-background-color, #fafafa);
         border-radius: 2px;
-        margin-right: 8px;
+        grid-column: 2;
+        margin-right: 0;
         display: inline-grid;
         overflow: hidden;
-        flex-grow: 1;
+        min-width: 0;
         max-width: none;
       }
 
@@ -1337,25 +1355,15 @@ class FytaPlantCard extends LitElement {
         color: var(--secondary-text-color, #727272);
         font-size: 0.9em;
         flex-shrink: 0;
+        grid-column: 4;
         text-align: left;
-        min-width: 30px;
+        min-width: 0;
         width: auto;
-        margin-right: 4px;
-      }
-
-      .sensor-row {
-      }
-
-      .sensor-column {
-        width: 50%;
-        box-sizing: border-box;
-      }
-
-      .sensor-column-left {
-        padding-right: 12px;      
+        margin-right: 0;
       }
 
       .compact-mode .attribute {
+        grid-template-columns: 24px minmax(0, 1fr);
         padding-bottom: 4px;
       }
 
@@ -1404,6 +1412,17 @@ class FytaPlantCard extends LitElement {
       /* Reduce padding in the attributes section for compact mode */
       .compact-mode .attributes {
         padding: 4px 16px 0px;
+      }
+
+      @container (max-width: 520px) {
+        .attributes {
+          grid-template-columns: minmax(0, 1fr);
+        }
+
+        .attribute,
+        .attribute.wide-full {
+          grid-column: 1;
+        }
       }
     `;
   }
@@ -1575,11 +1594,11 @@ class FytaPlantCard extends LitElement {
     return html`${statusLine}${fertilizationLine}${lastFertilizationLine}${nextFertilizationLine}`;
   }
 
-  _renderSensorVm(vm) {
-    return vm.kind === 'nutrition' ? this._renderNutritionVm(vm) : this._renderMeterVm(vm);
+  _renderSensorVm(vm, extraClass = '') {
+    return vm.kind === 'nutrition' ? this._renderNutritionVm(vm, extraClass) : this._renderMeterVm(vm, extraClass);
   }
 
-  _renderMeterVm(vm) {
+  _renderMeterVm(vm, extraClass = '') {
     const hass = this.hass;
     const sensorName = localize(hass, `card.sensor_name.${vm.sensorType}`);
     const hasSensorValue = vm.formattedValue !== '';
@@ -1601,7 +1620,7 @@ class FytaPlantCard extends LitElement {
 
     return html`
       <div
-        class="attribute tooltip ${vm.entityId ? 'interactive' : ''}"
+        class="attribute tooltip ${extraClass} ${vm.entityId ? 'interactive' : ''}"
         role="${vm.entityId ? 'button' : nothing}"
         tabindex="${vm.entityId ? '0' : nothing}"
         aria-label="${vm.entityId ? detailsLabel : nothing}"
@@ -1620,7 +1639,7 @@ class FytaPlantCard extends LitElement {
     `;
   }
 
-  _renderNutritionVm(vm) {
+  _renderNutritionVm(vm, extraClass = '') {
     const tooltipContent = this._renderNutritionTooltip(vm);
     const hasSensorValue = vm.readingState === SensorReadingStates.AVAILABLE;
     const hasDaysValue = vm.daysUntilFertilization !== null && !isNaN(vm.daysUntilFertilization);
@@ -1634,7 +1653,7 @@ class FytaPlantCard extends LitElement {
 
     return html`
       <div
-        class="attribute tooltip ${vm.entityId ? 'interactive' : ''}"
+        class="attribute tooltip ${extraClass} ${vm.entityId ? 'interactive' : ''}"
         role="${vm.entityId ? 'button' : nothing}"
         tabindex="${vm.entityId ? '0' : nothing}"
         aria-label="${vm.entityId ? detailsLabel : nothing}"
@@ -1664,40 +1683,11 @@ class FytaPlantCard extends LitElement {
 
     if (viewModels.length === 0) return nothing;
 
-    // Even count: distribute evenly across two columns.
-    // Odd count: the last view-model spans full width below the columns.
-    const leftColumnItems = [];
-    const rightColumnItems = [];
-    let fullWidthVm = null;
-
-    viewModels.forEach((vm, index) => {
-      if (index % 2 === 0) {
-        if (index === viewModels.length - 1) {
-          fullWidthVm = vm;
-        } else {
-          leftColumnItems.push(vm);
-        }
-      } else {
-        rightColumnItems.push(vm);
-      }
-    });
-
-    const renderVm = (vm) => this._renderSensorVm(vm);
-
-    const sensorHtml = html`
-      <div class="sensor-column sensor-column-left">
-        ${join(map(leftColumnItems, renderVm), '')}
-      </div>
-      <div class="sensor-column">
-        ${join(map(rightColumnItems, renderVm), '')}
-      </div>
-    `;
-
-    if (fullWidthVm) {
-      return html`${sensorHtml}${renderVm(fullWidthVm)}`;
-    }
-
-    return sensorHtml;
+    const hasOddSensorCount = viewModels.length % 2 === 1;
+    return join(map(viewModels, (vm, index) => {
+      const extraClass = hasOddSensorCount && index === viewModels.length - 1 ? 'wide-full' : '';
+      return this._renderSensorVm(vm, extraClass);
+    }), '');
   }
 }
 
