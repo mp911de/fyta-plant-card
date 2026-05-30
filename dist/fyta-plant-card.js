@@ -53,7 +53,6 @@ const TRANSLATIONS = {
       },
       measurement_status: {
         no_data: 'Unavailable',
-        not_configured: 'Entity not found',
         too_low: 'Too Low',
         low: 'Low',
         perfect: 'Perfect',
@@ -130,7 +129,6 @@ const TRANSLATIONS = {
       },
       measurement_status: {
         no_data: 'Nicht verfügbar',
-        not_configured: 'Entität nicht gefunden',
         too_low: 'Zu niedrig',
         low: 'Niedrig',
         perfect: 'Perfekt',
@@ -192,6 +190,14 @@ const DecimalsState = {
   UNTOUCHED: false,
   ZERO: 0,
   ONE: 1,
+};
+
+const NumberFormat = {
+  COMMA_DECIMAL: 'comma_decimal',
+  DECIMAL_COMMA: 'decimal_comma',
+  NONE: 'none',
+  SPACE_COMMA: 'space_comma',
+  SYSTEM: 'system',
 };
 
 const DeviceClass = {
@@ -704,7 +710,7 @@ const calculateMeterState = (sensorSettings, sensorEntity, statusState, readingS
     ? Number(sensorValue)
     : null;
 
-  if (readingState === SensorReadingStates.NO_DATA || readingState === SensorReadingStates.NOT_CONFIGURED) {
+  if (readingState === SensorReadingStates.NO_DATA) {
     return { percentage: 0, class: MeterClass.UNAVAILABLE };
   }
 
@@ -733,26 +739,81 @@ const calculateMeterState = (sensorSettings, sensorEntity, statusState, readingS
   }
 };
 
-const formatDecimals = (value, decimals = 0) => {
-  const numberValue = Number(value);
-  return isNaN(numberValue) ? '' : numberValue.toFixed(decimals);
-};
-
 const isNumericSensorState = (value) => value !== null && String(value).trim() !== '' && !isNaN(Number(value));
 
-const formatSensorValue = (sensorEntity, configDecimals) => {
+const numberFormatToLocale = (localeOptions) => {
+  switch (localeOptions?.number_format) {
+    case NumberFormat.COMMA_DECIMAL:
+      return ['en-US', 'en'];
+    case NumberFormat.DECIMAL_COMMA:
+      return ['de', 'es', 'it'];
+    case NumberFormat.SPACE_COMMA:
+      return ['fr', 'sv', 'cs'];
+    case NumberFormat.SYSTEM:
+      return undefined;
+    default:
+      return localeOptions?.language;
+  }
+};
+
+const round = (value, precision = 2) => Math.round(value * Math.pow(10, precision)) / Math.pow(10, precision);
+
+const getDefaultFormatOptions = (value, options) => {
+  const defaultOptions = { maximumFractionDigits: 2, ...options };
+  if (typeof value !== 'string') {
+    return defaultOptions;
+  }
+
+  if (!options || (options.minimumFractionDigits === undefined && options.maximumFractionDigits === undefined)) {
+    const digits = value.includes('.') ? value.split('.')[1].length : 0;
+    defaultOptions.minimumFractionDigits = digits;
+    defaultOptions.maximumFractionDigits = digits;
+  }
+
+  return defaultOptions;
+};
+
+const formatLocaleNumber = (value, localeOptions, options) => {
+  if (localeOptions?.number_format !== NumberFormat.NONE && isNumericSensorState(value) && Intl) {
+    const locale = numberFormatToLocale(localeOptions);
+    try {
+      return new Intl.NumberFormat(locale, getDefaultFormatOptions(value, options)).format(Number(value));
+    } catch (error) {
+      console.error(error);
+      return new Intl.NumberFormat(undefined, getDefaultFormatOptions(value, options)).format(Number(value));
+    }
+  }
+
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  const rounded = round(value, options?.maximumFractionDigits);
+  return `${rounded}${options?.style === 'currency' ? ` ${options.currency}` : ''}`;
+};
+
+const formatSensorValue = (sensorEntity, configDecimals, hass, sensorType) => {
   const sensorValue = sensorEntity.state;
+  if (!isNumericSensorState(sensorValue)) {
+    return '';
+  }
+
+  const formatWithDecimals = (decimals) => formatLocaleNumber(sensorValue, hass?.locale, {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+
   if (configDecimals !== false) {
-    return formatDecimals(sensorValue, configDecimals);
+    return formatWithDecimals(configDecimals);
   }
-  const entityPrecision = sensorEntity.display_precision;
-  if (!isNaN(entityPrecision)) {
-    return formatDecimals(sensorValue, entityPrecision);
+  if (sensorType === SensorTypes.MOISTURE) {
+    return formatWithDecimals(0);
   }
-  // Guard against HA sentinel strings ('unknown', 'unavailable', 'none', …):
-  // only return the raw state when it is actually numeric; otherwise signal
-  // the absence of a reading with an empty string.
-  return isNumericSensorState(sensorValue) ? sensorValue : '';
+  const entityPrecision = Number(sensorEntity.display_precision);
+  if (Number.isFinite(entityPrecision)) {
+    return formatWithDecimals(entityPrecision);
+  }
+  return formatLocaleNumber(sensorValue, hass?.locale);
 };
 
 const formatDisplayUnit = (unit) => {
@@ -797,7 +858,6 @@ const calculateDaysFromNow = (inputDateString) => {
 const SensorReadingStates = {
   AVAILABLE: 'available',
   NO_DATA: 'no_data',
-  NOT_CONFIGURED: 'not_configured',
 };
 
 const colorForMeasurementState = (state) =>
@@ -806,7 +866,6 @@ const colorForMeasurementState = (state) =>
 const colorForSensorReadingState = (readingState, status) => {
   switch (readingState) {
     case SensorReadingStates.NO_DATA:
-    case SensorReadingStates.NOT_CONFIGURED:
       return 'var(--disabled-text-color, #bdbdbd)';
     default:
       return colorForMeasurementState(isMissingSensorState(status) ? MeasurementStatusStates.NO_DATA : status);
@@ -819,59 +878,23 @@ const isMissingSensorState = (value) => {
 };
 
 const getNumericSensorReadingState = (sensorEntity) => {
-  if (!sensorEntity) {
-    return SensorReadingStates.NOT_CONFIGURED;
-  }
-  if (!isNumericSensorState(sensorEntity.state)) {
+  if (!sensorEntity || !isNumericSensorState(sensorEntity.state)) {
     return SensorReadingStates.NO_DATA;
   }
   return SensorReadingStates.AVAILABLE;
 };
 
 const getTextSensorReadingState = (sensorEntity) => {
-  if (!sensorEntity) {
-    return SensorReadingStates.NOT_CONFIGURED;
-  }
-  if (isMissingSensorState(sensorEntity.state)) {
+  if (!sensorEntity || isMissingSensorState(sensorEntity.state)) {
     return SensorReadingStates.NO_DATA;
   }
   return SensorReadingStates.AVAILABLE;
 };
 
-const buildMissingMeterViewModel = (sensorType) => ({
-  kind: 'meter',
-  sensorType,
-  entityId: '',
-  icon: SENSOR_SETTINGS[sensorType].icon,
-  color: colorForSensorReadingState(SensorReadingStates.NOT_CONFIGURED, ''),
-  formattedValue: '',
-  unitOfMeasurement: '',
-  displayUnit: '',
-  meter: { percentage: 0, class: MeterClass.UNAVAILABLE },
-  status: '',
-  readingState: SensorReadingStates.NOT_CONFIGURED,
-});
-
 const buildNutritionViewModel = (hass, entities) => {
   const statusEntityId = entities.stateIds[SensorTypes.NUTRIENTS_STATE] || '';
   const sensorEntity = statusEntityId ? hass.states[statusEntityId] : null;
   const readingState = getTextSensorReadingState(sensorEntity);
-
-  if (readingState === SensorReadingStates.NOT_CONFIGURED) {
-    return {
-      kind: 'nutrition',
-      sensorType: SensorTypes.NUTRIENTS,
-      entityId: '',
-      icon: SENSOR_SETTINGS[SensorTypes.NUTRIENTS].icon,
-      color: colorForSensorReadingState(readingState, ''),
-      meter: { percentage: 0, class: MeterClass.UNAVAILABLE },
-      status: '',
-      readingState,
-      daysUntilFertilization: null,
-      lastFertilizationDateString: null,
-      nextFertilizationDateString: null,
-    };
-  }
 
   const sensorState = sensorEntity?.state || '';
 
@@ -933,10 +956,10 @@ const buildSensorViewModel = (sensorType, hass, entities, config) => {
   }
 
   const sensorEntityId = entities.measurementIds[sensorType] || '';
-  if (!sensorEntityId) return buildMissingMeterViewModel(sensorType);
+  if (!sensorEntityId) return null;
 
   const sensorEntity = hass.states[sensorEntityId];
-  if (!sensorEntity) return buildMissingMeterViewModel(sensorType);
+  if (!sensorEntity) return null;
 
   const sensorSettings = SENSOR_SETTINGS[sensorType];
   const statusEntityId = entities.stateIds[sensorType] || '';
@@ -951,7 +974,7 @@ const buildSensorViewModel = (sensorType, hass, entities, config) => {
     entityId: sensorEntityId,
     icon: sensorSettings.icon,
     color: colorForSensorReadingState(readingState, status),
-    formattedValue: hasVisibleValue ? formatSensorValue(sensorEntity, config.decimals) : '',
+    formattedValue: hasVisibleValue ? formatSensorValue(sensorEntity, config.decimals, hass, sensorType) : '',
     unitOfMeasurement,
     displayUnit: formatDisplayUnit(unitOfMeasurement),
     meter: calculateMeterState(sensorSettings, sensorEntity, status, readingState),
@@ -1227,6 +1250,14 @@ class FytaPlantCard extends LitElement {
         min-width: 40px;
       }
 
+      .sensor-value.sensor-state {
+        color: var(--disabled-text-color, #bdbdbd);
+        font-size: 0.75em;
+        letter-spacing: 0.02em;
+        min-width: auto;
+        text-transform: uppercase;
+      }
+
       .meter {
         height: 8px;
         background-color: var(--primary-background-color, #fafafa);
@@ -1310,20 +1341,6 @@ class FytaPlantCard extends LitElement {
         min-width: 30px;
         width: auto;
         margin-right: 4px;
-      }
-
-      .sensor-state {
-        flex-shrink: 0;
-        font-size: 0.75em;
-        letter-spacing: 0.02em;
-        text-transform: uppercase;
-        color: var(--secondary-text-color, #727272);
-        margin-right: 4px;
-      }
-
-      .sensor-state.no_data,
-      .sensor-state.not_configured {
-        color: var(--disabled-text-color, #bdbdbd);
       }
 
       .sensor-row {
@@ -1565,10 +1582,11 @@ class FytaPlantCard extends LitElement {
   _renderMeterVm(vm) {
     const hass = this.hass;
     const sensorName = localize(hass, `card.sensor_name.${vm.sensorType}`);
-    const hasSensorValue = vm.readingState === SensorReadingStates.AVAILABLE;
+    const hasSensorValue = vm.formattedValue !== '';
     const displayValue = hasSensorValue
       ? vm.formattedValue
       : localize(hass, `card.measurement_status.${vm.readingState}`);
+    const valueClass = hasSensorValue ? 'sensor-value' : `sensor-value sensor-state ${vm.readingState}`;
     const valueLine = localize(hass, 'card.tooltip.sensor_value', {
       name: sensorName,
       value: displayValue,
@@ -1580,9 +1598,6 @@ class FytaPlantCard extends LitElement {
       : nothing;
     const tooltipContent = html`${valueLine}${statusLine}`;
     const detailsLabel = localize(this.hass, 'card.aria.sensor_details', { name: sensorName });
-    const stateBadge = vm.readingState === SensorReadingStates.AVAILABLE
-      ? nothing
-      : html`<div class="sensor-state ${vm.readingState}">${localize(hass, `card.measurement_status.${vm.readingState}`)}</div>`;
 
     return html`
       <div
@@ -1599,9 +1614,8 @@ class FytaPlantCard extends LitElement {
         <div class="meter">
           <span class="${this.config.state_color_sensor ? `${vm.meter.class}` : ''}" style="width: ${vm.meter.percentage}%;"></span>
         </div>
-        <div class="sensor-value">${displayValue}</div>
+        <div class="${valueClass}">${displayValue}</div>
         <div class="uom">${hasSensorValue ? vm.displayUnit : ''}</div>
-        ${stateBadge}
       </div>
     `;
   }
@@ -1613,12 +1627,10 @@ class FytaPlantCard extends LitElement {
     const sensorValue = hasSensorValue
       ? (hasDaysValue ? vm.daysUntilFertilization : '-')
       : localize(this.hass, `card.measurement_status.${vm.readingState}`);
+    const valueClass = hasSensorValue ? 'sensor-value' : `sensor-value sensor-state ${vm.readingState}`;
     const unitKey = hasDaysValue && Math.abs(vm.daysUntilFertilization) === 1 ? 'card.unit.day_one' : 'card.unit.day_many';
     const sensorName = localize(this.hass, `card.sensor_name.${vm.sensorType}`);
     const detailsLabel = localize(this.hass, 'card.aria.sensor_details', { name: sensorName });
-    const stateBadge = vm.readingState === SensorReadingStates.AVAILABLE
-      ? nothing
-      : html`<div class="sensor-state ${vm.readingState}">${localize(this.hass, `card.measurement_status.${vm.readingState}`)}</div>`;
 
     return html`
       <div
@@ -1635,9 +1647,8 @@ class FytaPlantCard extends LitElement {
         <div class="meter">
           <span class="${this.config.state_color_sensor ? `${vm.meter.class}` : ''}" style="width: ${vm.meter.percentage}%;"></span>
         </div>
-        <div class="sensor-value">${sensorValue}</div>
+        <div class="${valueClass}">${sensorValue}</div>
         <div class="uom">${hasSensorValue ? localize(this.hass, unitKey) : ''}</div>
-        ${stateBadge}
       </div>
     `;
   }

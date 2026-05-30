@@ -46,7 +46,6 @@
     },
     "measurement_status": {
       "no_data": "Unavailable",
-      "not_configured": "Entity not found",
       "too_low": "Too Low",
       "low": "Low",
       "perfect": "Perfect",
