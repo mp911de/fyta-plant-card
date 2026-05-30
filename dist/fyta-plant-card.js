@@ -821,6 +821,15 @@ const formatDisplayUnit = (unit) => {
   return unit;
 };
 
+const formatCompactDisplayUnit = (unit, sensorType) => {
+  const displayUnit = formatDisplayUnit(unit);
+  if (!displayUnit) return '';
+  if (sensorType === SensorTypes.LIGHT || sensorType === SensorTypes.SALINITY) {
+    return displayUnit.split('/')[0].trim() || displayUnit;
+  }
+  return displayUnit;
+};
+
 // Strip the time component from an ISO date string
 const formatDateForDisplay = (dateString) => {
   if (!dateString) return '';
@@ -977,6 +986,7 @@ const buildSensorViewModel = (sensorType, hass, entities, config) => {
     formattedValue: hasVisibleValue ? formatSensorValue(sensorEntity, config.decimals, hass, sensorType) : '',
     unitOfMeasurement,
     displayUnit: formatDisplayUnit(unitOfMeasurement),
+    compactDisplayUnit: formatCompactDisplayUnit(unitOfMeasurement, sensorType),
     meter: calculateMeterState(sensorSettings, sensorEntity, status, readingState),
     status,
     readingState,
@@ -1129,6 +1139,10 @@ class FytaPlantCard extends LitElement {
         margin-top: 25px;
       }
 
+      #container {
+        container-type: inline-size;
+      }
+
       img {
         display: block;
         height: auto;
@@ -1212,13 +1226,14 @@ class FytaPlantCard extends LitElement {
       }
 
       .attributes {
-        --sensor-value-width: 7ch;
-        --sensor-unit-width: 5.8em;
-        --sensor-meter-width: clamp(52px, 30%, 108px);
-        display: flex;
-        flex-wrap: wrap;
-        justify-content: space-between;
-        padding: 16px 16px 8px;
+        --sensor-meter-min-width: 44px;
+        --sensor-value-width: 3ch;
+        --sensor-uom-width: 4ch;
+        column-gap: 12px;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        overflow: visible;
+        padding: 16px 12px 8px 16px;
         white-space: nowrap;
       }
 
@@ -1226,15 +1241,29 @@ class FytaPlantCard extends LitElement {
         align-items: center;
         column-gap: 8px;
         display: grid;
-        grid-template-columns: 24px minmax(44px, var(--sensor-meter-width)) var(--sensor-value-width) var(--sensor-unit-width);
+        grid-template-columns: 24px minmax(var(--sensor-meter-min-width), 1fr) var(--sensor-value-width) var(--sensor-uom-width);
         min-width: 0;
+        overflow: visible;
         padding-bottom: 8px;
         white-space: nowrap;
         width: 100%;
       }
 
+      .attribute.sensor-light {
+        --sensor-meter-min-width: 40px;
+        /* Light readings can be 4 digits with a thousands separator (e.g. 1.753),
+           so this is the one bar allowed to be shorter to fit the wider value.
+           A long value overflows left into the 8px column gap before the meter. */
+        --sensor-value-width: 4.5ch;
+      }
+
       .attribute.wide-full {
-        width: 100%;
+        grid-column: 1 / -1;
+        grid-template-columns: 24px minmax(var(--sensor-meter-min-width), 1fr) var(--sensor-value-width) var(--sensor-uom-width);
+      }
+
+      .attribute.missing-value {
+        grid-template-columns: 24px minmax(0, 1fr);
       }
 
       .interactive {
@@ -1255,32 +1284,35 @@ class FytaPlantCard extends LitElement {
 
       .sensor-value {
         flex-shrink: 0;
+        font-variant-numeric: tabular-nums;
         grid-column: 3;
         margin-right: 0;
         text-align: right;
-        min-width: 40px;
       }
 
       .sensor-value.sensor-state {
         color: var(--disabled-text-color, #bdbdbd);
         font-size: 0.75em;
-        grid-column: 3 / 5;
+        grid-column: 2;
         letter-spacing: 0.02em;
         min-width: auto;
+        overflow: hidden;
         text-align: left;
+        text-overflow: ellipsis;
         text-transform: uppercase;
       }
 
       .meter {
         height: 8px;
-        background-color: var(--primary-background-color, #fafafa);
+        background-color: var(--secondary-background-color, #eeeeee);
+        background-color: color-mix(in srgb, var(--primary-text-color, #212121) 6%, var(--card-background-color, var(--primary-background-color, #fafafa)));
         border-radius: 2px;
         grid-column: 2;
         margin-right: 0;
         display: inline-grid;
         overflow: hidden;
         min-width: 0;
-        max-width: none;
+        width: 100%;
       }
 
       .meter > span {
@@ -1315,56 +1347,71 @@ class FytaPlantCard extends LitElement {
       }
 
       .tooltip {
+        overflow: visible;
         position: relative;
       }
 
       .tooltip .tip {
+        box-sizing: border-box;
         opacity: 0;
         visibility: hidden;
         position: absolute;
         padding: 6px 10px;
-        top: 3.3em;
+        bottom: calc(100% + 6px);
         left: 50%;
-        -webkit-transform: translateX(-50%) translateY(-180%);
-        transform: translateX(-50%) translateY(-180%);
+        -webkit-transform: translateX(-50%) translateY(4px);
+        transform: translateX(-50%) translateY(4px);
         background-color: var(--grey-color, #9e9e9e);
         color: var(--white-color, #ffffff);
-        white-space: nowrap;
-        z-index: 2;
+        line-height: 1.3;
+        max-inline-size: min(320px, calc(100vw - 32px));
+        overflow-wrap: anywhere;
+        pointer-events: none;
+        white-space: normal;
+        width: max-content;
+        z-index: 10;
         border-radius: 2px;
         transition: opacity 0.2s cubic-bezier(0.64, 0.09, 0.08, 1), transform 0.2s cubic-bezier(0.64, 0.09, 0.08, 1);
       }
 
       .battery.tooltip .tip {
+        bottom: auto;
         top: 2em;
+        white-space: nowrap;
       }
 
       .tooltip:hover .tip, .tooltip:active .tip {
         display: block;
         opacity: 1;
         visibility: visible;
-        -webkit-transform: translateX(-50%) translateY(-200%);
-        transform: translateX(-50%) translateY(-200%);
+        -webkit-transform: translateX(-50%) translateY(0);
+        transform: translateX(-50%) translateY(0);
       }
 
       .uom {
         color: var(--secondary-text-color, #727272);
-        font-size: 0.9em;
+        font-size: 0.85em;
         flex-shrink: 0;
         grid-column: 4;
         text-align: left;
-        min-width: 0;
+        min-width: max-content;
         width: auto;
         margin-right: 0;
       }
 
+      .uom-compact {
+        display: none;
+      }
+
       .sensor-column {
         box-sizing: border-box;
-        width: 50%;
+        min-width: 0;
+        overflow: visible;
+        width: auto;
       }
 
       .sensor-column-left {
-        padding-right: 12px;
+        padding-right: 0;
       }
 
       .compact-mode .attribute {
@@ -1416,7 +1463,18 @@ class FytaPlantCard extends LitElement {
 
       /* Reduce padding in the attributes section for compact mode */
       .compact-mode .attributes {
+        display: block;
         padding: 4px 16px 0px;
+      }
+
+      @container (max-width: 700px) {
+        .uom-full.has-compact-uom {
+          display: none;
+        }
+
+        .uom-compact {
+          display: inline;
+        }
       }
     `;
   }
@@ -1600,6 +1658,8 @@ class FytaPlantCard extends LitElement {
       ? vm.formattedValue
       : localize(hass, `card.measurement_status.${vm.readingState}`);
     const valueClass = hasSensorValue ? 'sensor-value' : `sensor-value sensor-state ${vm.readingState}`;
+    const rowStateClass = hasSensorValue ? 'has-value' : 'missing-value';
+    const hasCompactDisplayUnit = vm.compactDisplayUnit && vm.compactDisplayUnit !== vm.displayUnit;
     const valueLine = localize(hass, 'card.tooltip.sensor_value', {
       name: sensorName,
       value: displayValue,
@@ -1614,7 +1674,7 @@ class FytaPlantCard extends LitElement {
 
     return html`
       <div
-        class="attribute tooltip ${extraClass} ${vm.entityId ? 'interactive' : ''}"
+        class="attribute tooltip sensor-${vm.sensorType} ${rowStateClass} ${extraClass} ${vm.entityId ? 'interactive' : ''}"
         role="${vm.entityId ? 'button' : nothing}"
         tabindex="${vm.entityId ? '0' : nothing}"
         aria-label="${vm.entityId ? detailsLabel : nothing}"
@@ -1624,11 +1684,14 @@ class FytaPlantCard extends LitElement {
       >
         <div class="tip" style="text-align:center;">${tooltipContent}</div>
         <ha-icon icon="${vm.icon}" style="${this.config.state_color_icon ? `color:${vm.color};` : ''}"></ha-icon>
-        <div class="meter">
+        ${hasSensorValue ? html`<div class="meter">
           <span class="${this.config.state_color_sensor ? `${vm.meter.class}` : ''}" style="width: ${vm.meter.percentage}%;"></span>
-        </div>
+        </div>` : nothing}
         <div class="${valueClass}">${displayValue}</div>
-        <div class="uom">${hasSensorValue ? vm.displayUnit : ''}</div>
+        ${hasSensorValue ? html`<div class="uom">
+          <span class="uom-full ${hasCompactDisplayUnit ? 'has-compact-uom' : ''}">${vm.displayUnit}</span>
+          ${hasCompactDisplayUnit ? html`<span class="uom-compact">${vm.compactDisplayUnit}</span>` : nothing}
+        </div>` : nothing}
       </div>
     `;
   }
@@ -1641,13 +1704,14 @@ class FytaPlantCard extends LitElement {
       ? (hasDaysValue ? vm.daysUntilFertilization : '-')
       : localize(this.hass, `card.measurement_status.${vm.readingState}`);
     const valueClass = hasSensorValue ? 'sensor-value' : `sensor-value sensor-state ${vm.readingState}`;
+    const rowStateClass = hasSensorValue ? 'has-value' : 'missing-value';
     const unitKey = hasDaysValue && Math.abs(vm.daysUntilFertilization) === 1 ? 'card.unit.day_one' : 'card.unit.day_many';
     const sensorName = localize(this.hass, `card.sensor_name.${vm.sensorType}`);
     const detailsLabel = localize(this.hass, 'card.aria.sensor_details', { name: sensorName });
 
     return html`
       <div
-        class="attribute tooltip ${extraClass} ${vm.entityId ? 'interactive' : ''}"
+        class="attribute tooltip sensor-${vm.sensorType} ${rowStateClass} ${extraClass} ${vm.entityId ? 'interactive' : ''}"
         role="${vm.entityId ? 'button' : nothing}"
         tabindex="${vm.entityId ? '0' : nothing}"
         aria-label="${vm.entityId ? detailsLabel : nothing}"
@@ -1657,11 +1721,11 @@ class FytaPlantCard extends LitElement {
       >
         <div class="tip" style="text-align:center;">${tooltipContent}</div>
         <ha-icon icon="${vm.icon}" style="${this.config.state_color_icon ? ` color:${vm.color};` : ''}"></ha-icon>
-        <div class="meter">
+        ${hasSensorValue ? html`<div class="meter">
           <span class="${this.config.state_color_sensor ? `${vm.meter.class}` : ''}" style="width: ${vm.meter.percentage}%;"></span>
-        </div>
+        </div>` : nothing}
         <div class="${valueClass}">${sensorValue}</div>
-        <div class="uom">${hasSensorValue ? localize(this.hass, unitKey) : ''}</div>
+        ${hasSensorValue ? html`<div class="uom">${localize(this.hass, unitKey)}</div>` : nothing}
       </div>
     `;
   }
