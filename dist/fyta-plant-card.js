@@ -1129,10 +1129,6 @@ class FytaPlantCard extends LitElement {
         margin-top: 25px;
       }
 
-      #container {
-        container-type: inline-size;
-      }
-
       img {
         display: block;
         height: auto;
@@ -1216,13 +1212,13 @@ class FytaPlantCard extends LitElement {
       }
 
       .attributes {
-        --sensor-value-width: 6ch;
-        --sensor-unit-width: 6.6em;
-        column-gap: 12px;
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        --sensor-value-width: 7ch;
+        --sensor-unit-width: 5.8em;
+        --sensor-meter-width: clamp(52px, 30%, 108px);
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
         padding: 16px 16px 8px;
-        row-gap: 8px;
         white-space: nowrap;
       }
 
@@ -1230,15 +1226,15 @@ class FytaPlantCard extends LitElement {
         align-items: center;
         column-gap: 8px;
         display: grid;
-        grid-template-columns: 24px minmax(32px, 1fr) var(--sensor-value-width) var(--sensor-unit-width);
+        grid-template-columns: 24px minmax(44px, var(--sensor-meter-width)) var(--sensor-value-width) var(--sensor-unit-width);
         min-width: 0;
-        padding-bottom: 0;
+        padding-bottom: 8px;
         white-space: nowrap;
         width: 100%;
       }
 
       .attribute.wide-full {
-        grid-column: 1 / -1;
+        width: 100%;
       }
 
       .interactive {
@@ -1362,6 +1358,15 @@ class FytaPlantCard extends LitElement {
         margin-right: 0;
       }
 
+      .sensor-column {
+        box-sizing: border-box;
+        width: 50%;
+      }
+
+      .sensor-column-left {
+        padding-right: 12px;
+      }
+
       .compact-mode .attribute {
         grid-template-columns: 24px minmax(0, 1fr);
         padding-bottom: 4px;
@@ -1412,17 +1417,6 @@ class FytaPlantCard extends LitElement {
       /* Reduce padding in the attributes section for compact mode */
       .compact-mode .attributes {
         padding: 4px 16px 0px;
-      }
-
-      @container (max-width: 520px) {
-        .attributes {
-          grid-template-columns: minmax(0, 1fr);
-        }
-
-        .attribute,
-        .attribute.wide-full {
-          grid-column: 1;
-        }
       }
     `;
   }
@@ -1683,11 +1677,40 @@ class FytaPlantCard extends LitElement {
 
     if (viewModels.length === 0) return nothing;
 
-    const hasOddSensorCount = viewModels.length % 2 === 1;
-    return join(map(viewModels, (vm, index) => {
-      const extraClass = hasOddSensorCount && index === viewModels.length - 1 ? 'wide-full' : '';
-      return this._renderSensorVm(vm, extraClass);
-    }), '');
+    // Even count: distribute evenly across two columns.
+    // Odd count: the last view-model spans full width below the columns.
+    const leftColumnItems = [];
+    const rightColumnItems = [];
+    let fullWidthVm = null;
+
+    viewModels.forEach((vm, index) => {
+      if (index % 2 === 0) {
+        if (index === viewModels.length - 1) {
+          fullWidthVm = vm;
+        } else {
+          leftColumnItems.push(vm);
+        }
+      } else {
+        rightColumnItems.push(vm);
+      }
+    });
+
+    const renderVm = (vm) => this._renderSensorVm(vm);
+
+    const sensorHtml = html`
+      <div class="sensor-column sensor-column-left">
+        ${join(map(leftColumnItems, renderVm), '')}
+      </div>
+      <div class="sensor-column">
+        ${join(map(rightColumnItems, renderVm), '')}
+      </div>
+    `;
+
+    if (fullWidthVm) {
+      return html`${sensorHtml}${this._renderSensorVm(fullWidthVm, 'wide-full')}`;
+    }
+
+    return sensorHtml;
   }
 }
 
