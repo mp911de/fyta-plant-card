@@ -60,7 +60,6 @@ For manual YAML configuration, use these options:
 | state_color_icon       | boolean | Expose sensor state in color of sensor icons        | `true`       |
 | state_color_plant      | string  | `image`, `name`, or `disabled`                      | `image`      |
 | state_color_sensor     | boolean | Expose sensor state in color of sensor bars         | `true`       |
-| stale_threshold_hours  | number  | Mark sensor readings as stale after this many hours | `8`          |
 | sensors                | array   | Array of sensor information                         | See sensors  |
 
 ### Sensors

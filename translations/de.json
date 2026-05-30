@@ -18,7 +18,6 @@
       "state_color_battery": "Batterie-Statusfarbe verwenden",
       "state_color_sensor": "Sensor-Statusfarbe verwenden",
       "state_color_icon": "Status-Farbe für Icons verwenden",
-      "stale_threshold_hours": "Nach (Stunden) als nicht verfügbar markieren",
       "decimals": "Dezimalstellen der Sensorwerte"
     },
     "option": {
@@ -47,7 +46,6 @@
     },
     "measurement_status": {
       "no_data": "Nicht verfügbar",
-      "stale": "Veraltet",
       "not_configured": "Entität nicht gefunden",
       "too_low": "Zu niedrig",
       "low": "Niedrig",
